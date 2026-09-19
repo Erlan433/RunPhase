@@ -1,0 +1,185 @@
+<!doctype html>
+<html lang="ru">
+  <head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+    <meta name="theme-color" content="#101114">
+    <meta name="color-scheme" content="dark">
+    <title>RunPhase</title>
+    <link rel="stylesheet" href="css/reset.css">
+    <link rel="stylesheet" href="css/variables.css">
+    <link rel="stylesheet" href="css/style.css">
+    <script src="js/workout.js" defer></script>
+    <script src="js/app.js" defer></script>
+  </head>
+  <body>
+    <div class="app-shell">
+      <header class="app-header">
+        <span class="app-header__index" aria-hidden="true">01</span>
+        <h1 class="app-title">RUN CYCLE</h1>
+        <span class="app-header__status" aria-hidden="true"></span>
+      </header>
+
+      <main class="app-content" id="app">
+        <section class="settings" data-screen="settings" aria-label="Настройка тренировки">
+          <div class="mode-picker" role="group" aria-label="Режим тренировки">
+            <button class="mode-picker__button" type="button" data-mode="easy" aria-pressed="false">Легко</button>
+            <button class="mode-picker__button" type="button" data-mode="medium" aria-pressed="false">Средне</button>
+            <button class="mode-picker__button" type="button" data-mode="hard" aria-pressed="false">Тяжело</button>
+            <button class="mode-picker__button mode-picker__button--custom" type="button" data-mode="custom" aria-pressed="true">Свой режим</button>
+          </div>
+
+          <button class="history-link" type="button" data-open-history>
+            <span>История тренировок</span>
+            <span aria-hidden="true">→</span>
+          </button>
+
+          <div class="setting-row" data-setting="warmup">
+            <p class="setting-row__label" id="warmup-label">Разминка</p>
+            <div class="stepper" aria-labelledby="warmup-label">
+              <button class="stepper__button" type="button" data-direction="decrease" aria-label="Уменьшить время разминки">−</button>
+              <output class="stepper__value" data-value aria-live="polite">03:00</output>
+              <button class="stepper__button" type="button" data-direction="increase" aria-label="Увеличить время разминки">+</button>
+            </div>
+          </div>
+
+          <div class="setting-row setting-row--run" data-setting="run">
+            <p class="setting-row__label" id="run-label">Бег</p>
+            <div class="stepper" aria-labelledby="run-label">
+              <button class="stepper__button" type="button" data-direction="decrease" aria-label="Уменьшить время бега">−</button>
+              <output class="stepper__value" data-value aria-live="polite">02:00</output>
+              <button class="stepper__button" type="button" data-direction="increase" aria-label="Увеличить время бега">+</button>
+            </div>
+          </div>
+
+          <div class="setting-row setting-row--walk" data-setting="walk">
+            <p class="setting-row__label" id="walk-label">Ходьба</p>
+            <div class="stepper" aria-labelledby="walk-label">
+              <button class="stepper__button" type="button" data-direction="decrease" aria-label="Уменьшить время ходьбы">−</button>
+              <output class="stepper__value" data-value aria-live="polite">01:00</output>
+              <button class="stepper__button" type="button" data-direction="increase" aria-label="Увеличить время ходьбы">+</button>
+            </div>
+          </div>
+
+          <div class="setting-row" data-setting="cycles">
+            <p class="setting-row__label" id="cycles-label">Циклы</p>
+            <div class="stepper" aria-labelledby="cycles-label">
+              <button class="stepper__button" type="button" data-direction="decrease" aria-label="Уменьшить количество циклов">−</button>
+              <output class="stepper__value" data-value aria-live="polite">6</output>
+              <button class="stepper__button" type="button" data-direction="increase" aria-label="Увеличить количество циклов">+</button>
+            </div>
+          </div>
+
+          <div class="setting-row" data-setting="cooldown">
+            <p class="setting-row__label" id="cooldown-label">Заминка</p>
+            <div class="stepper" aria-labelledby="cooldown-label">
+              <button class="stepper__button" type="button" data-direction="decrease" aria-label="Уменьшить время заминки">−</button>
+              <output class="stepper__value" data-value aria-live="polite">03:00</output>
+              <button class="stepper__button" type="button" data-direction="increase" aria-label="Увеличить время заминки">+</button>
+            </div>
+          </div>
+
+          <button class="sound-setting" type="button" data-sound-toggle aria-pressed="true">
+            <span>Звук</span>
+            <strong data-sound-value>Вкл</strong>
+          </button>
+
+          <button class="start-button" type="button">НАЧАТЬ ТРЕНИРОВКУ</button>
+        </section>
+
+        <section class="prepare-screen screen" data-screen="countdown" aria-labelledby="prepare-title" hidden>
+          <h2 class="prepare-screen__title" id="prepare-title">ГОТОВ?</h2>
+          <p class="prepare-screen__countdown" data-countdown aria-live="assertive" aria-atomic="true">3</p>
+          <p class="prepare-screen__hint">Приготовься двигаться</p>
+        </section>
+
+        <section class="workout-screen screen" data-screen="workout" data-workout-stage="WARMUP" aria-labelledby="workout-stage" hidden>
+          <div class="workout-screen__cycle">
+            <span>Цикл</span>
+            <strong data-workout-cycle>— / 6</strong>
+          </div>
+
+          <div class="workout-route" data-workout-route role="img" aria-label="Маршрут тренировки">
+            <div class="workout-route__viewport">
+              <div class="workout-route__segments workout-route__segments--future" data-route-future aria-hidden="true"></div>
+              <div class="workout-route__segments workout-route__segments--completed" data-route-completed aria-hidden="true"></div>
+              <span class="workout-route__marker" aria-hidden="true"></span>
+            </div>
+            <div class="workout-route__ends" aria-hidden="true">
+              <span>Старт</span>
+              <span>Финиш</span>
+            </div>
+          </div>
+
+          <div class="workout-screen__main">
+            <h2 class="workout-screen__stage" id="workout-stage" data-workout-stage-label aria-live="polite">РАЗМИНКА</h2>
+            <p class="workout-screen__timer" data-workout-time role="timer">03:00</p>
+            <p class="workout-screen__next">
+              <span>Далее</span>
+              <strong data-workout-next>Бег · 02:00</strong>
+            </p>
+          </div>
+
+          <button class="workout-screen__pause" type="button" data-workout-pause>ПАУЗА</button>
+
+          <div class="pause-overlay" data-pause-overlay role="dialog" aria-modal="true" aria-labelledby="pause-title" hidden>
+            <div class="pause-overlay__panel">
+              <h2 class="pause-overlay__title" id="pause-title">ТРЕНИРОВКА НА ПАУЗЕ</h2>
+              <div class="pause-overlay__actions">
+                <button class="pause-overlay__resume" type="button" data-workout-resume>ПРОДОЛЖИТЬ</button>
+                <button class="pause-overlay__finish" type="button" data-workout-finish>ЗАВЕРШИТЬ ТРЕНИРОВКУ</button>
+              </div>
+            </div>
+          </div>
+        </section>
+
+        <section class="result-screen screen" data-screen="result" aria-labelledby="result-title" hidden>
+          <header class="result-screen__header">
+            <span class="result-screen__mark" aria-hidden="true">✓</span>
+            <h2 class="result-screen__title" id="result-title">ТРЕНИРОВКА ЗАВЕРШЕНА</h2>
+          </header>
+
+          <dl class="result-stats">
+            <div class="result-stats__row">
+              <dt>Общее время</dt>
+              <dd data-result-total-time>00:00</dd>
+            </div>
+            <div class="result-stats__row">
+              <dt>Время бега</dt>
+              <dd data-result-run-time>00:00</dd>
+            </div>
+            <div class="result-stats__row">
+              <dt>Время ходьбы</dt>
+              <dd data-result-walk-time>00:00</dd>
+            </div>
+            <div class="result-stats__row">
+              <dt>Завершено циклов</dt>
+              <dd data-result-cycles>0</dd>
+            </div>
+            <div class="result-stats__row result-stats__row--accent">
+              <dt>Выполнено</dt>
+              <dd data-result-percentage>0%</dd>
+            </div>
+          </dl>
+
+          <div class="result-screen__actions">
+            <button class="result-screen__button result-screen__button--primary" type="button" data-result-save>СОХРАНИТЬ</button>
+            <button class="result-screen__button" type="button" data-result-repeat>ПОВТОРИТЬ</button>
+            <button class="result-screen__button result-screen__button--quiet" type="button" data-result-home>НА ГЛАВНУЮ</button>
+          </div>
+        </section>
+
+        <section class="history-screen screen" data-screen="history" aria-labelledby="history-title" hidden>
+          <header class="history-screen__header">
+            <button class="history-screen__back" type="button" data-history-back aria-label="Вернуться на главную">←</button>
+            <h2 class="history-screen__title" id="history-title">ИСТОРИЯ</h2>
+            <span class="history-screen__count" data-history-count aria-label="Количество тренировок">0</span>
+          </header>
+
+          <div class="history-list" data-history-list></div>
+          <p class="history-screen__empty" data-history-empty>Завершённых тренировок пока нет.</p>
+        </section>
+      </main>
+    </div>
+  </body>
+</html>
