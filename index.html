@@ -4,35 +4,32 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
     <meta name="theme-color" content="#101114">
-    <meta name="color-scheme" content="dark">
+    <meta name="color-scheme" content="light dark">
     <title>RunPhase</title>
     <link rel="stylesheet" href="css/reset.css">
     <link rel="stylesheet" href="css/variables.css">
     <link rel="stylesheet" href="css/style.css">
+    <script src="js/saved-workouts.js" defer></script>
+    <script src="js/workout-history.js" defer></script>
     <script src="js/workout.js" defer></script>
     <script src="js/app.js" defer></script>
   </head>
   <body>
     <div class="app-shell">
       <header class="app-header">
-        <span class="app-header__index" aria-hidden="true">01</span>
         <h1 class="app-title">RUN CYCLE</h1>
-        <span class="app-header__status" aria-hidden="true"></span>
       </header>
 
       <main class="app-content" id="app">
-        <section class="settings" data-screen="settings" aria-label="Настройка тренировки">
-          <div class="mode-picker" role="group" aria-label="Режим тренировки">
-            <button class="mode-picker__button" type="button" data-mode="easy" aria-pressed="false">Легко</button>
-            <button class="mode-picker__button" type="button" data-mode="medium" aria-pressed="false">Средне</button>
-            <button class="mode-picker__button" type="button" data-mode="hard" aria-pressed="false">Тяжело</button>
-            <button class="mode-picker__button mode-picker__button--custom" type="button" data-mode="custom" aria-pressed="true">Свой режим</button>
+        <section class="settings home-screen" data-screen="home" aria-label="Главная">
+          <div class="setting-row" data-setting="cycles">
+            <p class="setting-row__label" id="cycles-label">Циклы</p>
+            <div class="stepper" aria-labelledby="cycles-label">
+              <button class="stepper__button" type="button" data-direction="decrease" aria-label="Уменьшить количество циклов">−</button>
+              <output class="stepper__value" data-value aria-live="polite">6</output>
+              <button class="stepper__button" type="button" data-direction="increase" aria-label="Увеличить количество циклов">+</button>
+            </div>
           </div>
-
-          <button class="history-link" type="button" data-open-history>
-            <span>История тренировок</span>
-            <span aria-hidden="true">→</span>
-          </button>
 
           <div class="setting-row" data-setting="warmup">
             <p class="setting-row__label" id="warmup-label">Разминка</p>
@@ -61,15 +58,6 @@
             </div>
           </div>
 
-          <div class="setting-row" data-setting="cycles">
-            <p class="setting-row__label" id="cycles-label">Циклы</p>
-            <div class="stepper" aria-labelledby="cycles-label">
-              <button class="stepper__button" type="button" data-direction="decrease" aria-label="Уменьшить количество циклов">−</button>
-              <output class="stepper__value" data-value aria-live="polite">6</output>
-              <button class="stepper__button" type="button" data-direction="increase" aria-label="Увеличить количество циклов">+</button>
-            </div>
-          </div>
-
           <div class="setting-row" data-setting="cooldown">
             <p class="setting-row__label" id="cooldown-label">Заминка</p>
             <div class="stepper" aria-labelledby="cooldown-label">
@@ -79,12 +67,20 @@
             </div>
           </div>
 
-          <button class="sound-setting" type="button" data-sound-toggle aria-pressed="true">
-            <span>Звук</span>
-            <strong data-sound-value>Вкл</strong>
-          </button>
-
           <button class="start-button" type="button">НАЧАТЬ ТРЕНИРОВКУ</button>
+        </section>
+
+        <section class="workouts-screen screen" data-screen="workouts" aria-labelledby="workouts-title" hidden>
+          <header class="workouts-screen__header">
+            <h2 class="workouts-screen__title" id="workouts-title">ТРЕНИРОВКИ</h2>
+          </header>
+
+          <div class="workouts-empty" data-workouts-empty>
+            <p class="workouts-empty__text">У вас пока нет сохраненных тренировок</p>
+            <button class="workouts-empty__create" type="button" data-create-workout>СОЗДАТЬ ТРЕНИРОВКУ</button>
+          </div>
+
+          <div class="workouts-list" data-workouts-list hidden></div>
         </section>
 
         <section class="prepare-screen screen" data-screen="countdown" aria-labelledby="prepare-title" hidden>
@@ -163,23 +159,166 @@
           </dl>
 
           <div class="result-screen__actions">
-            <button class="result-screen__button result-screen__button--primary" type="button" data-result-save>СОХРАНИТЬ</button>
             <button class="result-screen__button" type="button" data-result-repeat>ПОВТОРИТЬ</button>
-            <button class="result-screen__button result-screen__button--quiet" type="button" data-result-home>НА ГЛАВНУЮ</button>
+            <button class="result-screen__button result-screen__button--primary" type="button" data-result-home>НА ГЛАВНУЮ</button>
           </div>
         </section>
 
         <section class="history-screen screen" data-screen="history" aria-labelledby="history-title" hidden>
           <header class="history-screen__header">
-            <button class="history-screen__back" type="button" data-history-back aria-label="Вернуться на главную">←</button>
             <h2 class="history-screen__title" id="history-title">ИСТОРИЯ</h2>
-            <span class="history-screen__count" data-history-count aria-label="Количество тренировок">0</span>
           </header>
 
-          <div class="history-list" data-history-list></div>
-          <p class="history-screen__empty" data-history-empty>Завершённых тренировок пока нет.</p>
+          <div class="history-calendar">
+            <div class="history-calendar__header">
+              <button class="history-calendar__navigation" type="button" data-calendar-previous aria-label="Предыдущий месяц">
+                <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="m15 5-7 7 7 7" /></svg>
+              </button>
+              <h3 class="history-calendar__month" data-calendar-month aria-live="polite"></h3>
+              <button class="history-calendar__navigation" type="button" data-calendar-next aria-label="Следующий месяц">
+                <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="m9 5 7 7-7 7" /></svg>
+              </button>
+            </div>
+
+            <div class="history-calendar__weekdays" aria-hidden="true">
+              <span>Пн</span>
+              <span>Вт</span>
+              <span>Ср</span>
+              <span>Чт</span>
+              <span>Пт</span>
+              <span>Сб</span>
+              <span>Вс</span>
+            </div>
+
+            <div class="history-calendar__grid" data-calendar-grid role="grid"></div>
+          </div>
+
+          <section class="history-day" aria-labelledby="history-day-title">
+            <h3 class="history-day__title" id="history-day-title" data-history-day-title></h3>
+            <div class="history-day__list" data-history-day-list></div>
+            <p class="history-day__empty" data-history-day-empty>В этот день тренировок не было</p>
+          </section>
+        </section>
+
+        <section class="app-settings-screen screen" data-screen="settings" aria-labelledby="settings-title" hidden>
+          <header class="app-settings-screen__header">
+            <h2 class="app-settings-screen__title" id="settings-title">НАСТРОЙКИ</h2>
+          </header>
+
+          <section class="app-settings-group" aria-labelledby="appearance-title">
+            <h3 class="app-settings-group__title" id="appearance-title">ВНЕШНИЙ ВИД</h3>
+            <p class="app-settings-group__label">Тема</p>
+            <div class="theme-options" role="radiogroup" aria-label="Тема приложения" data-theme-options>
+              <button class="theme-options__item" type="button" role="radio" data-theme-option="light" aria-checked="false">Светлая</button>
+              <button class="theme-options__item" type="button" role="radio" data-theme-option="dark" aria-checked="true">Темная</button>
+            </div>
+          </section>
+
+          <section class="app-settings-group" aria-labelledby="sound-title">
+            <h3 class="app-settings-group__title" id="sound-title">ЗВУК</h3>
+            <button class="sound-setting" type="button" data-sound-toggle aria-pressed="true">
+              <span>Звуковые подсказки</span>
+              <strong data-sound-value>Вкл</strong>
+            </button>
+          </section>
         </section>
       </main>
+
+      <div class="workout-editor" data-workout-editor role="dialog" aria-modal="true" aria-labelledby="workout-editor-title" hidden>
+        <form class="workout-editor__panel" data-workout-editor-form novalidate>
+          <header class="workout-editor__header">
+            <h2 class="workout-editor__title" id="workout-editor-title" data-workout-editor-title>НОВАЯ ТРЕНИРОВКА</h2>
+            <button class="workout-editor__close" type="button" data-close-workout-editor aria-label="Закрыть окно создания тренировки">
+              <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false">
+                <path d="m6 6 12 12M18 6 6 18" />
+              </svg>
+            </button>
+          </header>
+
+          <label class="workout-editor__name-field" for="workout-name">
+            <span>Название тренировки</span>
+            <input id="workout-name" name="workout-name" type="text" autocomplete="off" maxlength="80" data-workout-name>
+          </label>
+          <p class="workout-editor__error" data-workout-name-error aria-live="polite" hidden></p>
+
+          <div class="workout-editor__settings" data-workout-editor-settings>
+            <div class="setting-row" data-setting="cycles">
+              <p class="setting-row__label" id="editor-cycles-label">Циклы</p>
+              <div class="stepper" aria-labelledby="editor-cycles-label">
+                <button class="stepper__button" type="button" data-direction="decrease" aria-label="Уменьшить количество циклов">−</button>
+                <output class="stepper__value" data-value aria-live="polite">6</output>
+                <button class="stepper__button" type="button" data-direction="increase" aria-label="Увеличить количество циклов">+</button>
+              </div>
+            </div>
+
+            <div class="setting-row" data-setting="warmup">
+              <p class="setting-row__label" id="editor-warmup-label">Разминка</p>
+              <div class="stepper" aria-labelledby="editor-warmup-label">
+                <button class="stepper__button" type="button" data-direction="decrease" aria-label="Уменьшить время разминки">−</button>
+                <output class="stepper__value" data-value aria-live="polite">03:00</output>
+                <button class="stepper__button" type="button" data-direction="increase" aria-label="Увеличить время разминки">+</button>
+              </div>
+            </div>
+
+            <div class="setting-row setting-row--run" data-setting="run">
+              <p class="setting-row__label" id="editor-run-label">Бег</p>
+              <div class="stepper" aria-labelledby="editor-run-label">
+                <button class="stepper__button" type="button" data-direction="decrease" aria-label="Уменьшить время бега">−</button>
+                <output class="stepper__value" data-value aria-live="polite">02:00</output>
+                <button class="stepper__button" type="button" data-direction="increase" aria-label="Увеличить время бега">+</button>
+              </div>
+            </div>
+
+            <div class="setting-row setting-row--walk" data-setting="walk">
+              <p class="setting-row__label" id="editor-walk-label">Ходьба</p>
+              <div class="stepper" aria-labelledby="editor-walk-label">
+                <button class="stepper__button" type="button" data-direction="decrease" aria-label="Уменьшить время ходьбы">−</button>
+                <output class="stepper__value" data-value aria-live="polite">01:00</output>
+                <button class="stepper__button" type="button" data-direction="increase" aria-label="Увеличить время ходьбы">+</button>
+              </div>
+            </div>
+
+            <div class="setting-row" data-setting="cooldown">
+              <p class="setting-row__label" id="editor-cooldown-label">Заминка</p>
+              <div class="stepper" aria-labelledby="editor-cooldown-label">
+                <button class="stepper__button" type="button" data-direction="decrease" aria-label="Уменьшить время заминки">−</button>
+                <output class="stepper__value" data-value aria-live="polite">03:00</output>
+                <button class="stepper__button" type="button" data-direction="increase" aria-label="Увеличить время заминки">+</button>
+              </div>
+            </div>
+          </div>
+
+          <button class="workout-editor__save" type="submit" data-workout-editor-save>СОХРАНИТЬ</button>
+        </form>
+      </div>
+
+      <nav class="bottom-navigation" aria-label="Основная навигация" data-bottom-navigation>
+        <button class="bottom-navigation__item" type="button" data-nav-target="home" aria-current="page">
+          <svg class="bottom-navigation__icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false">
+            <path d="m3.5 10 8.5-6.5 8.5 6.5v9.5a1 1 0 0 1-1 1h-5v-6h-5v6h-5a1 1 0 0 1-1-1Z" />
+          </svg>
+          <span>Главная</span>
+        </button>
+        <button class="bottom-navigation__item" type="button" data-nav-target="workouts">
+          <svg class="bottom-navigation__icon bottom-navigation__icon--bicep" viewBox="0 0 512 512" aria-hidden="true" focusable="false">
+            <path d="M211.832 39.06c-15.022 15.31-15.894 22.83-23.473 43.903 2.69 9.14 5.154 16.927 9.148 25.117 5.158.283 10.765.47 15.342.43-6.11-10.208-8.276-19.32-4.733-35.274 4.3 19.05 12.847 29.993 21.203 34.332 3.032-.334 5.957-.714 8.776-1.146-6.255-10.337-8.494-19.47-4.914-35.588 3.897 17.27 11.287 27.876 18.86 32.94 4.658-1.043 9.283-2.243 13.927-3.534-5.517-9.69-7.36-18.692-3.97-33.957 3.357 14.876 9.307 24.81 15.732 30.516 5.095-1.57 9.296-2.898 13.852-4.347-.685-5.782-.416-12.187 1.064-19.115l1.883-8.8 17.603 3.76-1.88 8.804c-3.636 17.008 1.324 24.42 7.306 28.666 5.98 4.244 14.69 3.46 16.03 2.6l7.576-4.86 9.72 15.15c-3.857 2.34-7.9 5.44-11.822 7.06 18.65 27.678 32.183 61.465 24.756 93.55-2.365 9.474-6.03 18.243-11.715 24.986 12.725 12.13 21.215 22.026 31.032 34.5-3.713-2.387-7.586-4.844-11.692-7.37-11.397-7.01-23.832-14.214-34.98-19.802-16.012-7.8-31.367-18.205-47.73-20.523-22.552-2.967-46.27 4.797-73.32 21.06 7.872 8.72 13.282 15.474 20.312 24.288-6.98-4.338-14.652-9.07-23.16-14.23-32.554-17.48-65.39-48.227-100.438-49.99-30.56-1.092-59.952 14.955-89.677 38.568L18 254.293V494h31.963c45.184-17.437 80.287-57.654 97.03-94.52l.25-.564.325-.52c9.463-15.252 11.148-29.688 16.79-44.732 5.645-15.044 16.907-29.718 41.884-38.756 4.353-2.16 5.07-1.415 8.633 1.395 30.468 24.01 57.29 32.02 83.24 32.35 32.61-1.557 58.442-9.882 85.682-19.38-3.966 3.528-8.77 7.21-13.986 10.762-15.323 10.436-34.217 19.928-46.304 24.8-14.716 2.006-28.36 2.416-41.967.616-9.96 12.09-25.574 20.358-37.35 26.673 63.92 14.023 115.88.91 167.386-22.896-9.522-1.817-19.008-3.692-27.994-5.42 31.634-4.422 64.984-3.766 94.705-3.53 4.084-.02 7.213-.453 8.7-.886 14.167-51.072-4.095-97.893-34.294-145.216-30.263-47.425-72.18-94.107-101.896-143.04-21.1-17.257-48.6-31.455-77.522-46.175-20.386 4.25-41.026 9.336-61.443 14.1zm85.385 70.49c-11.678 3.6-23.71 7.425-33.852 10.012 2.527 4.93 3.735 10.664 3.395 16.202 11.028.877 21.082-2.018 28.965-6.356 4.845-2.666 8.74-6.048 11.414-8.96-3.854-2.735-7.26-6.41-9.923-10.9zm-54.213 14.698c-11.76 1.143-24.59 2.362-35.06 2.236 2.39 4.772 3.78 12.067 8.51 14.84 11.18 1.164 20.6 1.997 29.91-1.746 5.435-3.214 1.818-15.058-3.36-15.33zm-34.98 209.332c-17.593 7.233-22.586 15.14-26.813 26.406-3.998 10.66-6.227 25.076-14.48 41.014 32.29-6.38 69.625-21.23 93.852-40.088-17.017-5.098-34.553-13.852-52.557-27.332zm9.318 71.385c-18.723 7.237-40.836 16.144-59.696 14.062C143.774 446.68 124.012 474.03 91.762 494h84.68c21.564-29.798 38.067-56.575 40.9-89.035z" />
+          </svg>
+          <span>Тренировки</span>
+        </button>
+        <button class="bottom-navigation__item" type="button" data-nav-target="history">
+          <svg class="bottom-navigation__icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false">
+            <path d="M5 5.5h14v14H5zM8 3.5v4M16 3.5v4M5 9.5h14M8.5 13h2M13.5 13h2M8.5 16.5h2" />
+          </svg>
+          <span>История</span>
+        </button>
+        <button class="bottom-navigation__item" type="button" data-nav-target="settings">
+          <svg class="bottom-navigation__icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false">
+            <path d="M9.4 3.5h5.2l.5 2.2c.5.2 1 .5 1.4.8l2.1-.7 2.6 4.5-1.6 1.5v1.8l1.6 1.5-2.6 4.5-2.1-.7c-.4.3-.9.6-1.4.8l-.5 2.2H9.4l-.5-2.2c-.5-.2-1-.5-1.4-.8l-2.1.7-2.6-4.5 1.6-1.5v-1.8L2.8 10.6l2.6-4.5 2.1.7c.4-.3.9-.6 1.4-.8Z" />
+            <circle cx="12" cy="12" r="2.5" />
+          </svg>
+          <span>Настройки</span>
+        </button>
+      </nav>
     </div>
   </body>
 </html>

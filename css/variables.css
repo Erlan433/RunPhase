@@ -1,4 +1,6 @@
 :root {
+  color-scheme: dark;
+
   /* Colors */
   --color-background: #101114;
   --color-surface: #1b1d22;
@@ -8,17 +10,35 @@
   --color-walk: #6c8cff;
   --color-border: #2a2d34;
   --color-focus: #ffffff;
+  --color-on-accent: #101114;
+  --color-danger: #ff8585;
+  --color-run-subtle: rgb(183 255 60 / 10%);
+  --color-run-focus: rgb(183 255 60 / 20%);
+  --color-surface-translucent: rgb(27 29 34 / 96%);
+  --color-overlay: rgb(16 17 20 / 92%);
+  --color-overlay-strong: rgb(16 17 20 / 94%);
+  --color-shadow: rgb(0 0 0 / 28%);
+  --color-shadow-soft: rgb(16 17 20 / 36%);
 
   /* Typography */
   --font-family-base: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
-  --font-size-xs: 0.75rem;
-  --font-size-sm: 0.875rem;
-  --font-size-md: 1rem;
-  --font-size-lg: 1.25rem;
-  --font-size-xl: 1.75rem;
-  --font-size-2xl: clamp(2.5rem, 11vw, 3.75rem);
+  --font-size-caption: 0.875rem;
+  --font-size-secondary: 1rem;
+  --font-size-body: 1.125rem;
+  --font-size-action: clamp(1.125rem, 4.8vw, 1.25rem);
+  --font-size-heading: clamp(1.75rem, 8vw, 2rem);
+  --font-size-display: clamp(1.75rem, 7vw, 2.25rem);
+  --font-size-timer: clamp(5rem, 25vw, 7.5rem);
+  --font-size-countdown: clamp(6rem, 32vw, 9rem);
+  --font-size-countdown-start: clamp(3rem, 17vw, 5rem);
+  --font-size-xs: var(--font-size-caption);
+  --font-size-sm: var(--font-size-secondary);
+  --font-size-md: var(--font-size-body);
+  --font-size-lg: var(--font-size-action);
+  --font-size-xl: var(--font-size-display);
   --line-height-tight: 1.05;
   --line-height-base: 1.5;
+  --line-height-readable: 1.35;
   --font-weight-bold: 700;
   --font-weight-heavy: 800;
 
@@ -42,12 +62,13 @@
   --radius-round: 999px;
 
   /* Controls */
-  --control-height-sm: 2.75rem;
-  --control-height-md: 3.25rem;
-  --control-height-lg: 3.75rem;
+  --control-height-sm: 3rem;
+  --control-height-md: 3.5rem;
+  --control-height-lg: 4rem;
   --button-padding-inline: 1.5rem;
-  --button-icon-size: 2.75rem;
-  --setting-row-min-height: 4.5rem;
+  --button-icon-size: 3.25rem;
+  --setting-row-min-height: 5rem;
+  --bottom-navigation-height: 5rem;
 
   /* Strokes and route */
   --stroke-thin: 1px;
@@ -59,4 +80,29 @@
   /* Layout */
   --app-max-width: 30rem;
   --page-padding: 1.25rem;
+}
+
+:root[data-theme='light'] {
+  color-scheme: light;
+  --color-background: #f4f5f7;
+  --color-surface: #ffffff;
+  --color-text-primary: #15171c;
+  --color-text-secondary: #626873;
+  --color-run: #6d9900;
+  --color-walk: #315fce;
+  --color-border: #d8dce3;
+  --color-focus: #15171c;
+  --color-on-accent: #ffffff;
+  --color-danger: #bc3d3d;
+  --color-run-subtle: rgb(109 153 0 / 12%);
+  --color-run-focus: rgb(109 153 0 / 20%);
+  --color-surface-translucent: rgb(255 255 255 / 96%);
+  --color-overlay: rgb(244 245 247 / 92%);
+  --color-overlay-strong: rgb(244 245 247 / 94%);
+  --color-shadow: rgb(21 23 28 / 16%);
+  --color-shadow-soft: rgb(21 23 28 / 18%);
+}
+
+:root[data-theme='dark'] {
+  color-scheme: dark;
 }

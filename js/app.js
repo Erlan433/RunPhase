@@ -2,15 +2,13 @@
 
 const STORAGE_KEY = 'runphase-settings';
 const RESULT_STORAGE_KEY = 'runphase-last-workout';
-const HISTORY_STORAGE_KEY = 'runphase-workout-history';
 const COUNTDOWN_DURATION_MS = 3_000;
 const START_MESSAGE_DURATION_MS = 700;
-
-const presets = {
-  easy: { run: 60, walk: 120, cycles: 6 },
-  medium: { run: 120, walk: 60, cycles: 8 },
-  hard: { run: 240, walk: 60, cycles: 8 },
-};
+const spokenCountdownNumbers = Object.freeze({
+  3: 'три',
+  2: 'два',
+  1: 'один',
+});
 
 const settingsConfig = {
   warmup: {
@@ -42,12 +40,17 @@ const settingsConfig = {
 
 const storedConfiguration = loadStoredConfiguration();
 const settings = loadSettings(storedConfiguration);
-let activeMode = loadMode(storedConfiguration);
 let soundEnabled = loadSoundEnabled(storedConfiguration);
+let themePreference = loadThemePreference(storedConfiguration);
 const screenElements = Array.from(document.querySelectorAll('[data-screen]'));
 const screens = new Map(screenElements.map((screen) => [screen.dataset.screen, screen]));
-const settingsElement = screens.get('settings');
-const modePickerElement = document.querySelector('.mode-picker');
+const homeElement = screens.get('home');
+const workoutsScreenElement = screens.get('workouts');
+const historyScreenElement = screens.get('history');
+const bottomNavigationElement = document.querySelector('[data-bottom-navigation]');
+const bottomNavigationItems = Array.from(
+  bottomNavigationElement.querySelectorAll('[data-nav-target]'),
+);
 const startButtonElement = document.querySelector('.start-button');
 const countdownElement = document.querySelector('[data-countdown]');
 const workoutScreenElement = screens.get('workout');
@@ -64,30 +67,66 @@ const resumeWorkoutElement = document.querySelector('[data-workout-resume]');
 const finishWorkoutElement = document.querySelector('[data-workout-finish]');
 const soundToggleElement = document.querySelector('[data-sound-toggle]');
 const soundValueElement = document.querySelector('[data-sound-value]');
+const themeOptionsElement = document.querySelector('[data-theme-options]');
+const themeColorElement = document.querySelector('meta[name="theme-color"]');
 const resultTotalTimeElement = document.querySelector('[data-result-total-time]');
 const resultRunTimeElement = document.querySelector('[data-result-run-time]');
 const resultWalkTimeElement = document.querySelector('[data-result-walk-time]');
 const resultCyclesElement = document.querySelector('[data-result-cycles]');
 const resultPercentageElement = document.querySelector('[data-result-percentage]');
-const resultSaveElement = document.querySelector('[data-result-save]');
 const resultRepeatElement = document.querySelector('[data-result-repeat]');
 const resultHomeElement = document.querySelector('[data-result-home]');
-const openHistoryElement = document.querySelector('[data-open-history]');
-const historyBackElement = document.querySelector('[data-history-back]');
-const historyListElement = document.querySelector('[data-history-list]');
-const historyEmptyElement = document.querySelector('[data-history-empty]');
-const historyCountElement = document.querySelector('[data-history-count]');
+const workoutsListElement = document.querySelector('[data-workouts-list]');
+const workoutsEmptyElement = document.querySelector('[data-workouts-empty]');
+const calendarMonthElement = document.querySelector('[data-calendar-month]');
+const calendarGridElement = document.querySelector('[data-calendar-grid]');
+const calendarPreviousElement = document.querySelector('[data-calendar-previous]');
+const calendarNextElement = document.querySelector('[data-calendar-next]');
+const historyDayTitleElement = document.querySelector('[data-history-day-title]');
+const historyDayListElement = document.querySelector('[data-history-day-list]');
+const historyDayEmptyElement = document.querySelector('[data-history-day-empty]');
+const workoutEditorElement = document.querySelector('[data-workout-editor]');
+const workoutEditorFormElement = document.querySelector('[data-workout-editor-form]');
+const workoutEditorSettingsElement = document.querySelector('[data-workout-editor-settings]');
+const workoutNameElement = document.querySelector('[data-workout-name]');
+const workoutNameErrorElement = document.querySelector('[data-workout-name-error]');
+const closeWorkoutEditorElement = document.querySelector('[data-close-workout-editor]');
+const workoutEditorTitleElement = document.querySelector('[data-workout-editor-title]');
+const workoutEditorSaveElement = document.querySelector('[data-workout-editor-save]');
 let workoutSession = null;
+let activeWorkoutConfiguration = null;
+let activeWorkoutName = 'Своя тренировка';
+let workoutDraftConfiguration = null;
+let editingWorkoutId = null;
 let workoutAnimationFrameId = null;
 let lastWorkoutRenderKey = '';
 let lastVibrationStage = null;
 let lastCountdownVibrationKey = '';
-let lastAudioStage = null;
-let lastWarningSoundKey = '';
-let audioContext = null;
-let lastWorkoutSummary = null;
-let lastWorkoutRecord = null;
-let currentScreen = 'settings';
+let lastSpeechStage = null;
+let lastSpokenCountdownKey = '';
+let currentScreen = 'home';
+const initialCalendarDate = new Date();
+let historyCalendarMonth = new Date(
+  initialCalendarDate.getFullYear(),
+  initialCalendarDate.getMonth(),
+  1,
+);
+let selectedHistoryDate = formatLocalDateKey(initialCalendarDate);
+
+const russianMonthNames = [
+  'Январь',
+  'Февраль',
+  'Март',
+  'Апрель',
+  'Май',
+  'Июнь',
+  'Июль',
+  'Август',
+  'Сентябрь',
+  'Октябрь',
+  'Ноябрь',
+  'Декабрь',
+];
 
 const stageContent = {
   PREPARE: { label: 'ПОДГОТОВКА', nextLabel: 'Подготовка' },
@@ -99,75 +138,204 @@ const stageContent = {
 };
 
 renderSettings();
-renderActiveMode();
 renderSoundSetting();
-showScreen('settings');
+applyThemePreference();
+renderThemePreference();
+renderSavedWorkouts();
+showScreen('home');
 
-startButtonElement.addEventListener('click', startPreparation);
+startButtonElement.addEventListener('click', () => {
+  startWorkout(settings, 'Своя тренировка');
+});
 workoutPauseElement.addEventListener('click', pauseWorkout);
 resumeWorkoutElement.addEventListener('click', resumeWorkout);
 finishWorkoutElement.addEventListener('click', finishWorkout);
 soundToggleElement.addEventListener('click', toggleSound);
-resultSaveElement.addEventListener('click', saveWorkoutResult);
+themeOptionsElement.addEventListener('click', (event) => {
+  const option = event.target.closest('[data-theme-option]');
+
+  if (!option) {
+    return;
+  }
+
+  themePreference = option.dataset.themeOption;
+  applyThemePreference();
+  renderThemePreference();
+  saveSettings();
+});
+
 resultRepeatElement.addEventListener('click', repeatWorkout);
 resultHomeElement.addEventListener('click', returnHome);
-openHistoryElement.addEventListener('click', openHistory);
-historyBackElement.addEventListener('click', closeHistory);
+bottomNavigationElement.addEventListener('click', (event) => {
+  const item = event.target.closest('[data-nav-target]');
 
-modePickerElement.addEventListener('click', (event) => {
-  const button = event.target.closest('[data-mode]');
-
-  if (!button) {
+  if (!item) {
     return;
   }
 
-  const mode = button.dataset.mode;
+  const screenName = item.dataset.navTarget;
 
-  if (mode !== 'custom') {
-    Object.assign(settings, presets[mode]);
-    renderSettings();
+  if (screenName === 'workouts') {
+    renderSavedWorkouts();
   }
 
-  setActiveMode(mode);
-  saveSettings();
+  if (screenName === 'history') {
+    renderHistoryCalendar();
+  }
+
+  showScreen(screenName);
 });
 
-settingsElement.addEventListener('click', (event) => {
-  const button = event.target.closest('.stepper__button');
+calendarPreviousElement.addEventListener('click', () => {
+  historyCalendarMonth = new Date(
+    historyCalendarMonth.getFullYear(),
+    historyCalendarMonth.getMonth() - 1,
+    1,
+  );
+  renderHistoryCalendar();
+});
 
-  if (!button) {
+calendarNextElement.addEventListener('click', () => {
+  historyCalendarMonth = new Date(
+    historyCalendarMonth.getFullYear(),
+    historyCalendarMonth.getMonth() + 1,
+    1,
+  );
+  renderHistoryCalendar();
+});
+
+historyScreenElement.addEventListener('click', (event) => {
+  const dayButton = event.target.closest('[data-calendar-date]');
+
+  if (!dayButton) {
     return;
   }
 
-  const row = button.closest('[data-setting]');
-  const key = row.dataset.setting;
-  const config = settingsConfig[key];
-  const direction = button.dataset.direction === 'increase' ? 1 : -1;
-  const currentIndex = config.allowedValues.indexOf(settings[key]);
-  const nextIndex = clamp(currentIndex + direction, 0, config.allowedValues.length - 1);
-
-  settings[key] = config.allowedValues[nextIndex];
-  setActiveMode('custom');
-  saveSettings();
-  renderSetting(row, key);
+  selectedHistoryDate = dayButton.dataset.calendarDate;
+  renderHistoryCalendar();
 });
 
-function setActiveMode(mode) {
-  activeMode = mode;
-  renderActiveMode();
-}
+workoutsScreenElement.addEventListener('click', (event) => {
+  const createButton = event.target.closest('[data-create-workout]');
 
-function renderActiveMode() {
-  modePickerElement.querySelectorAll('[data-mode]').forEach((button) => {
-    button.setAttribute('aria-pressed', String(button.dataset.mode === activeMode));
+  if (createButton) {
+    openWorkoutEditor();
+    return;
+  }
+
+  const startButton = event.target.closest('[data-start-saved-workout]');
+
+  if (startButton) {
+    const workout = globalThis.getSavedWorkoutById(startButton.dataset.startSavedWorkout);
+
+    if (workout) {
+      startWorkout(workout, workout.name);
+    }
+
+    return;
+  }
+
+  const menuButton = event.target.closest('[data-workout-menu-button]');
+
+  if (menuButton) {
+    toggleWorkoutMenu(menuButton);
+    return;
+  }
+
+  const menuAction = event.target.closest('[data-workout-menu-action]');
+
+  if (!menuAction) {
+    return;
+  }
+
+  const workoutId = menuAction.dataset.workoutId;
+  const workout = globalThis.getSavedWorkoutById(workoutId);
+
+  if (!workout) {
+    renderSavedWorkouts();
+    return;
+  }
+
+  if (menuAction.dataset.workoutMenuAction === 'edit') {
+    openWorkoutEditor(workout);
+    return;
+  }
+
+  if (menuAction.dataset.workoutMenuAction !== 'delete') {
+    return;
+  }
+
+  const shouldDelete = typeof window.confirm !== 'function'
+    || window.confirm(`Удалить тренировку «${workout.name}»?`);
+
+  if (shouldDelete && globalThis.deleteWorkout(workoutId)) {
+    renderSavedWorkouts();
+  }
+});
+
+homeElement.addEventListener('click', (event) => {
+  if (changeWorkoutSetting(event, settings, homeElement)) {
+    saveSettings();
+  }
+});
+
+workoutEditorSettingsElement.addEventListener('click', (event) => {
+  changeWorkoutSetting(event, workoutDraftConfiguration, workoutEditorSettingsElement);
+});
+
+closeWorkoutEditorElement.addEventListener('click', closeWorkoutEditor);
+workoutNameElement.addEventListener('input', clearWorkoutNameError);
+workoutEditorFormElement.addEventListener('submit', (event) => {
+  event.preventDefault();
+
+  const name = workoutNameElement.value.trim();
+
+  if (!name) {
+    showWorkoutNameError('Введите название тренировки');
+    workoutNameElement.focus();
+    return;
+  }
+
+  const workoutChanges = {
+    name,
+    ...workoutDraftConfiguration,
+  };
+  const savedWorkout = editingWorkoutId
+    ? globalThis.updateWorkout(editingWorkoutId, workoutChanges)
+    : globalThis.saveWorkout(workoutChanges);
+
+  if (!savedWorkout) {
+    showWorkoutNameError(
+      editingWorkoutId ? 'Не удалось обновить тренировку' : 'Не удалось сохранить тренировку',
+    );
+    return;
+  }
+
+  closeWorkoutEditor();
+  renderSavedWorkouts();
+});
+
+function startWorkout(workoutConfiguration, workoutName = 'Своя тренировка') {
+  activeWorkoutConfiguration = getWorkoutConfiguration(workoutConfiguration);
+  activeWorkoutName = typeof workoutName === 'string' && workoutName.trim()
+    ? workoutName.trim()
+    : 'Своя тренировка';
+  workoutSession = new WorkoutSession({
+    prepare: 0,
+    warmup: activeWorkoutConfiguration.warmup,
+    run: activeWorkoutConfiguration.run,
+    walk: activeWorkoutConfiguration.walk,
+    cycles: activeWorkoutConfiguration.cycles,
+    cooldown: activeWorkoutConfiguration.cooldown,
   });
+
+  startPreparation();
 }
 
 function startPreparation() {
   const countdownStartedAt = Date.now();
   let visibleValue = null;
 
-  unlockAudio();
   showScreen('countdown');
 
   const updateCountdown = () => {
@@ -200,21 +368,19 @@ function showCountdownValue(value) {
 }
 
 function beginWorkout() {
-  buildWorkoutRoute();
+  const workoutConfiguration = activeWorkoutConfiguration ?? getWorkoutConfiguration(settings);
+
+  buildWorkoutRoute(workoutConfiguration);
   lastWorkoutRenderKey = '';
   lastVibrationStage = null;
   lastCountdownVibrationKey = '';
-  lastAudioStage = null;
-  lastWarningSoundKey = '';
+  lastSpeechStage = null;
+  lastSpokenCountdownKey = '';
+  cancelCountdownSpeech();
 
-  workoutSession = new WorkoutSession({
-    prepare: 0,
-    warmup: settings.warmup,
-    run: settings.run,
-    walk: settings.walk,
-    cycles: settings.cycles,
-    cooldown: settings.cooldown,
-  });
+  if (!workoutSession) {
+    return;
+  }
 
   const initialState = workoutSession.start();
 
@@ -254,6 +420,7 @@ function pauseWorkout() {
 
   const pausedState = workoutSession.pause();
 
+  cancelCountdownSpeech();
   renderWorkout(pausedState);
 
   if (pausedState.status !== 'paused') {
@@ -293,6 +460,7 @@ function finishWorkout() {
   }
 
   workoutSession.stop();
+  cancelCountdownSpeech();
 
   if (workoutAnimationFrameId !== null) {
     cancelAnimationFrame(workoutAnimationFrameId);
@@ -308,61 +476,54 @@ function showWorkoutResult() {
     return;
   }
 
-  lastWorkoutSummary = workoutSession.getSummary();
-  lastWorkoutRecord = createWorkoutRecord(lastWorkoutSummary);
-  storeWorkoutRecord(lastWorkoutRecord);
-  resultTotalTimeElement.textContent = formatResultDuration(lastWorkoutSummary.totalSeconds);
-  resultRunTimeElement.textContent = formatResultDuration(lastWorkoutSummary.runSeconds);
-  resultWalkTimeElement.textContent = formatResultDuration(lastWorkoutSummary.walkSeconds);
-  resultCyclesElement.textContent = String(lastWorkoutSummary.completedCycles);
-  resultPercentageElement.textContent = `${lastWorkoutSummary.completionPercentage}%`;
-  resultSaveElement.textContent = 'СОХРАНИТЬ';
-  resultSaveElement.disabled = false;
+  cancelCountdownSpeech();
+  const summary = workoutSession.getSummary();
+  const workoutRecord = createWorkoutRecord(summary);
+
+  globalThis.saveWorkoutHistoryRecord(workoutRecord);
+  storeLastWorkoutResult(workoutRecord);
+  resultTotalTimeElement.textContent = formatResultDuration(summary.totalSeconds);
+  resultRunTimeElement.textContent = formatResultDuration(summary.runSeconds);
+  resultWalkTimeElement.textContent = formatResultDuration(summary.walkSeconds);
+  resultCyclesElement.textContent = String(summary.completedCycles);
+  resultPercentageElement.textContent = `${summary.completionPercentage}%`;
   pauseOverlayElement.hidden = true;
   showScreen('result');
   workoutSession = null;
-  resultSaveElement.focus();
+  resultHomeElement.focus();
 }
 
-function saveWorkoutResult() {
-  if (!lastWorkoutSummary || !lastWorkoutRecord) {
-    return;
-  }
-
+function storeLastWorkoutResult(workoutRecord) {
   try {
-    storeWorkoutRecord(lastWorkoutRecord);
     localStorage.setItem(
       RESULT_STORAGE_KEY,
       JSON.stringify({
-        ...lastWorkoutRecord,
+        ...workoutRecord,
         settings: { ...settings },
       }),
     );
-
-    resultSaveElement.textContent = 'СОХРАНЕНО';
-    resultSaveElement.disabled = true;
   } catch {
     // The result screen remains usable when local storage is unavailable.
   }
 }
 
 function repeatWorkout() {
-  lastWorkoutSummary = null;
-  lastWorkoutRecord = null;
-  startPreparation();
+  startWorkout(activeWorkoutConfiguration ?? settings, activeWorkoutName);
 }
 
 function returnHome() {
-  lastWorkoutSummary = null;
-  lastWorkoutRecord = null;
-  showScreen('settings');
+  showScreen('home');
   startButtonElement.focus();
 }
 
 function createWorkoutRecord(summary) {
+  const endedAt = new Date().toISOString();
+
   return Object.freeze({
     id: createWorkoutId(),
-    date: new Date().toISOString(),
+    date: endedAt,
+    endedAt,
+    name: activeWorkoutName,
     totalDuration: summary.totalSeconds,
     runDuration: summary.runSeconds,
     walkDuration: summary.walkSeconds,
@@ -379,68 +540,6 @@ function createWorkoutId() {
   return `workout-${Date.now()}-${Math.random().toString(36).slice(2, 10)}`;
 }
 
-function storeWorkoutRecord(record) {
-  try {
-    const history = loadWorkoutHistory();
-
-    if (!history.some(({ id }) => id === record.id)) {
-      history.unshift(record);
-    }
-
-    localStorage.setItem(HISTORY_STORAGE_KEY, JSON.stringify(history));
-    return true;
-  } catch {
-    return false;
-  }
-}
-
-function loadWorkoutHistory() {
-  try {
-    const parsedHistory = JSON.parse(localStorage.getItem(HISTORY_STORAGE_KEY));
-
-    if (!Array.isArray(parsedHistory)) {
-      return [];
-    }
-
-    return parsedHistory
-      .filter(isValidWorkoutRecord)
-      .sort((first, second) => Date.parse(second.date) - Date.parse(first.date));
-  } catch {
-    return [];
-  }
-}
-
-function isValidWorkoutRecord(record) {
-  return record
-    && typeof record === 'object'
-    && typeof record.id === 'string'
-    && record.id.length > 0
-    && typeof record.date === 'string'
-    && Number.isFinite(Date.parse(record.date))
-    && isNonNegativeInteger(record.totalDuration)
-    && isNonNegativeInteger(record.runDuration)
-    && isNonNegativeInteger(record.walkDuration)
-    && isNonNegativeInteger(record.completedCycles)
-    && Number.isInteger(record.totalCycles)
-    && record.totalCycles > 0
-    && record.completedCycles <= record.totalCycles;
-}
-
-function isNonNegativeInteger(value) {
-  return Number.isInteger(value) && value >= 0;
-}
-
-function openHistory() {
-  renderWorkoutHistory();
-  showScreen('history');
-  historyBackElement.focus();
-}
-
-function closeHistory() {
-  showScreen('settings');
-  openHistoryElement.focus();
-}
-
 function showScreen(screenName) {
   if (!screens.has(screenName)) {
     throw new Error(`Unknown screen: ${screenName}`);
@@ -455,54 +554,345 @@ function showScreen(screenName) {
 
   currentScreen = screenName;
   document.body.dataset.screen = screenName;
+  updateBottomNavigation(screenName);
   window.scrollTo(0, 0);
 }
 
-function renderWorkoutHistory() {
-  const history = loadWorkoutHistory();
-  const fragment = document.createDocumentFragment();
+function updateBottomNavigation(screenName) {
+  const isHidden = !workoutEditorElement.hidden
+    || ['countdown', 'workout', 'result'].includes(screenName);
 
-  history.forEach((record) => {
-    fragment.append(createHistoryCard(record));
+  bottomNavigationElement.hidden = isHidden;
+  bottomNavigationItems.forEach((item) => {
+    const isCurrent = item.dataset.navTarget === screenName;
+
+    if (isCurrent) {
+      item.setAttribute('aria-current', 'page');
+    } else {
+      item.removeAttribute('aria-current');
+    }
   });
-
-  historyListElement.replaceChildren(fragment);
-  historyCountElement.textContent = String(history.length);
-  historyEmptyElement.hidden = history.length > 0;
 }
 
-function createHistoryCard(record) {
+function renderHistoryCalendar() {
+  const year = historyCalendarMonth.getFullYear();
+  const month = historyCalendarMonth.getMonth();
+  const daysInMonth = new Date(year, month + 1, 0).getDate();
+  const firstWeekday = (new Date(year, month, 1).getDay() + 6) % 7;
+  const totalCells = Math.ceil((firstWeekday + daysInMonth) / 7) * 7;
+  const workoutDates = new Set(globalThis.getWorkoutDates());
+  const today = formatLocalDateKey(new Date());
+  const fragment = document.createDocumentFragment();
+
+  calendarMonthElement.textContent = `${russianMonthNames[month]} ${year}`;
+  calendarGridElement.setAttribute(
+    'aria-label',
+    `Календарь: ${russianMonthNames[month]} ${year}`,
+  );
+
+  for (let cellIndex = 0; cellIndex < totalCells; cellIndex += 1) {
+    const day = cellIndex - firstWeekday + 1;
+
+    if (day < 1 || day > daysInMonth) {
+      const emptyCell = document.createElement('span');
+
+      emptyCell.className = 'history-calendar__empty-day';
+      emptyCell.setAttribute('aria-hidden', 'true');
+      fragment.append(emptyCell);
+      continue;
+    }
+
+    const date = new Date(year, month, day);
+    const dateKey = formatLocalDateKey(date);
+    const hasWorkout = workoutDates.has(dateKey);
+    const dayButton = document.createElement('button');
+    const dayNumber = document.createElement('span');
+
+    dayButton.className = 'history-calendar__day';
+    dayButton.type = 'button';
+    dayButton.dataset.calendarDate = dateKey;
+    dayButton.setAttribute('role', 'gridcell');
+    dayButton.setAttribute('aria-selected', String(dateKey === selectedHistoryDate));
+    dayButton.setAttribute(
+      'aria-label',
+      `${formatCalendarDateLabel(date)}${hasWorkout ? ', есть тренировка' : ''}`,
+    );
+    dayButton.classList.toggle('is-today', dateKey === today);
+    dayButton.classList.toggle('is-selected', dateKey === selectedHistoryDate);
+    dayNumber.className = 'history-calendar__day-number';
+    dayNumber.textContent = String(day);
+    dayButton.append(dayNumber);
+
+    if (hasWorkout) {
+      dayButton.append(createCalendarFlame());
+    }
+
+    fragment.append(dayButton);
+  }
+
+  calendarGridElement.replaceChildren(fragment);
+  renderSelectedHistoryDay();
+}
+
+function renderSelectedHistoryDay() {
+  const workouts = globalThis.getWorkoutsForDate(selectedHistoryDate)
+    .sort((first, second) => Date.parse(first.endedAt) - Date.parse(second.endedAt));
+  const fragment = document.createDocumentFragment();
+
+  workouts.forEach((workout) => {
+    fragment.append(createHistoryDayCard(workout));
+  });
+
+  historyDayTitleElement.textContent = formatHistoryDayTitle(selectedHistoryDate);
+  historyDayListElement.replaceChildren(fragment);
+  historyDayListElement.hidden = workouts.length === 0;
+  historyDayEmptyElement.hidden = workouts.length > 0;
+}
+
+function createHistoryDayCard(workout) {
   const card = document.createElement('article');
   const header = document.createElement('header');
-  const date = document.createElement('time');
-  const total = document.createElement('strong');
+  const title = document.createElement('h4');
+  const time = document.createElement('time');
+  const duration = document.createElement('p');
   const details = document.createElement('dl');
 
-  card.className = 'history-card';
-  header.className = 'history-card__header';
-  date.className = 'history-card__date';
-  date.dateTime = record.date;
-  date.textContent = formatHistoryDate(record.date);
-  total.className = 'history-card__total';
-  total.textContent = formatResultDuration(record.totalDuration);
-  details.className = 'history-card__details';
+  card.className = 'history-day-card';
+  header.className = 'history-day-card__header';
+  title.className = 'history-day-card__title';
+  title.textContent = workout.name;
+  time.className = 'history-day-card__time';
+  time.dateTime = workout.endedAt;
+  time.textContent = formatHistoryWorkoutTime(workout.endedAt);
+  duration.className = 'history-day-card__duration';
+  duration.textContent = formatHistoryWorkoutDuration(workout.totalDuration);
+  details.className = 'history-day-card__details';
   details.append(
-    createHistoryMetric('Бег', formatResultDuration(record.runDuration), 'run'),
-    createHistoryMetric('Ходьба', formatResultDuration(record.walkDuration), 'walk'),
-    createHistoryMetric('Циклы', `${record.completedCycles} / ${record.totalCycles}`),
+    createHistoryDayMetric('Бег', formatHistoryWorkoutDuration(workout.runDuration), 'run'),
+    createHistoryDayMetric('Ходьба', formatHistoryWorkoutDuration(workout.walkDuration), 'walk'),
+    createHistoryDayMetric('Циклы', `${workout.completedCycles} / ${workout.totalCycles}`),
   );
-  header.append(date, total);
-  card.append(header, details);
+  header.append(title, time);
+  card.append(header, duration, details);
 
   return card;
 }
 
-function createHistoryMetric(label, value, variant = '') {
+function createHistoryDayMetric(label, value, variant = '') {
   const metric = document.createElement('div');
   const term = document.createElement('dt');
   const description = document.createElement('dd');
 
-  metric.className = `history-card__metric${variant ? ` history-card__metric--${variant}` : ''}`;
+  metric.className = `history-day-card__metric${variant ? ` history-day-card__metric--${variant}` : ''}`;
+  term.textContent = `${label}:`;
+  description.textContent = value;
+  metric.append(term, description);
+
+  return metric;
+}
+
+function formatHistoryDayTitle(dateKey) {
+  const [year, month, day] = dateKey.split('-').map(Number);
+  const monthNames = [
+    'января',
+    'февраля',
+    'марта',
+    'апреля',
+    'мая',
+    'июня',
+    'июля',
+    'августа',
+    'сентября',
+    'октября',
+    'ноября',
+    'декабря',
+  ];
+
+  if (!Number.isInteger(year) || !Number.isInteger(month) || !Number.isInteger(day)) {
+    return '';
+  }
+
+  return `${day} ${monthNames[month - 1]}`;
+}
+
+function formatHistoryWorkoutTime(timestamp) {
+  return new Intl.DateTimeFormat('ru-RU', {
+    hour: '2-digit',
+    minute: '2-digit',
+    hourCycle: 'h23',
+  }).format(new Date(timestamp));
+}
+
+function formatHistoryWorkoutDuration(totalSeconds) {
+  const minutes = Math.floor(totalSeconds / 60);
+  const seconds = totalSeconds % 60;
+
+  return seconds === 0 ? `${minutes} мин` : `${minutes} мин ${seconds} сек`;
+}
+
+function createCalendarFlame() {
+  const flame = document.createElement('span');
+
+  flame.className = 'history-calendar__flame';
+  flame.setAttribute('aria-hidden', 'true');
+  flame.innerHTML = '<svg viewBox="-33 0 255 255" focusable="false"><path fill="#ff6a0d" d="M187.899 164.809C185.803 214.868 144.574 254.812 94 254.812 42.085 254.812 0 211.312 0 160.812c0-6.75-.121-20.24 10-43 6.057-13.621 9.856-22.178 12-30 1.178-4.299 3.469-11.129 10 0 3.851 6.562 4 16 4 16s14.328-10.995 24-32c14.179-30.793 2.866-49.2-1-62-1.338-4.428-2.178-12.386 7-.999 9.352 3.451 34.076 20.758 47 39 18.445 26.035 25 61 25 61s5.906-7.33 8-15c2.365-8.661 2.4-17.239 9.999-7.999 7.227 8.787 17.96 25.3 24.001 41 10.969 28.509 7.899 55.997 7.899 55.997Z" fill-rule="evenodd"/><path fill="#fc9502" d="M94 254.812c-35.899 0-65-29.101-65-65 0-21.661 8.729-34.812 26.896-52.646 11.632-11.419 22.519-25.444 27.146-34.994.911-1.88 2.984-11.677 10.977-.206 4.193 6.016 10.766 16.715 14.981 25.846 7.266 15.743 9 31 9 31s7.121-4.196 12-15c1.573-3.482 4.753-16.664 13.643-3.484 6.523 9.672 15.484 27.062 15.357 49.484 0 35.899-29.102 65-65 65Z" fill-rule="evenodd"/><path fill="#fce202" d="M95 183.812c9.25 0 9.25 17.129 21 40 7.824 15.229-3.879 41-21 41s-26-13.879-26-41c0-17.12 16.75-40 26-40Z" fill-rule="evenodd"/></svg>';
+
+  return flame;
+}
+
+function formatLocalDateKey(date) {
+  const year = date.getFullYear();
+  const month = String(date.getMonth() + 1).padStart(2, '0');
+  const day = String(date.getDate()).padStart(2, '0');
+
+  return `${year}-${month}-${day}`;
+}
+
+function formatCalendarDateLabel(date) {
+  return new Intl.DateTimeFormat('ru-RU', {
+    day: 'numeric',
+    month: 'long',
+    year: 'numeric',
+  }).format(date);
+}
+
+function openWorkoutEditor(workout = null) {
+  const isEditing = Boolean(workout?.id);
+
+  editingWorkoutId = isEditing ? workout.id : null;
+  workoutDraftConfiguration = getWorkoutConfiguration(isEditing ? workout : settings);
+  workoutNameElement.value = isEditing ? workout.name : '';
+  workoutEditorTitleElement.textContent = isEditing ? 'ИЗМЕНИТЬ ТРЕНИРОВКУ' : 'НОВАЯ ТРЕНИРОВКА';
+  workoutEditorSaveElement.textContent = isEditing ? 'СОХРАНИТЬ ИЗМЕНЕНИЯ' : 'СОХРАНИТЬ';
+  closeWorkoutEditorElement.setAttribute(
+    'aria-label',
+    isEditing ? 'Закрыть окно изменения тренировки' : 'Закрыть окно создания тренировки',
+  );
+  clearWorkoutNameError();
+  renderWorkoutSettings(workoutEditorSettingsElement, workoutDraftConfiguration);
+  workoutEditorElement.hidden = false;
+  updateBottomNavigation(currentScreen);
+  requestAnimationFrame(() => workoutNameElement.focus());
+}
+
+function closeWorkoutEditor() {
+  workoutEditorElement.hidden = true;
+  workoutDraftConfiguration = null;
+  editingWorkoutId = null;
+  updateBottomNavigation(currentScreen);
+}
+
+function showWorkoutNameError(message) {
+  workoutNameErrorElement.textContent = message;
+  workoutNameErrorElement.hidden = false;
+  workoutNameElement.setAttribute('aria-invalid', 'true');
+}
+
+function clearWorkoutNameError() {
+  workoutNameErrorElement.textContent = '';
+  workoutNameErrorElement.hidden = true;
+  workoutNameElement.removeAttribute('aria-invalid');
+}
+
+function changeWorkoutSetting(event, workoutConfiguration, container) {
+  const button = event.target.closest('.stepper__button');
+
+  if (!button || !container.contains(button) || !workoutConfiguration) {
+    return false;
+  }
+
+  const row = button.closest('[data-setting]');
+
+  if (!row || !container.contains(row)) {
+    return false;
+  }
+
+  const key = row.dataset.setting;
+  const config = settingsConfig[key];
+  const direction = button.dataset.direction === 'increase' ? 1 : -1;
+  const currentIndex = config.allowedValues.indexOf(workoutConfiguration[key]);
+  const nextIndex = clamp(currentIndex + direction, 0, config.allowedValues.length - 1);
+
+  workoutConfiguration[key] = config.allowedValues[nextIndex];
+  renderSetting(row, key, workoutConfiguration);
+
+  return true;
+}
+
+function renderSavedWorkouts() {
+  const savedWorkouts = globalThis.getSavedWorkouts();
+  const fragment = document.createDocumentFragment();
+
+  savedWorkouts.forEach((workout) => {
+    fragment.append(createSavedWorkoutCard(workout));
+  });
+
+  workoutsListElement.replaceChildren(fragment);
+  workoutsListElement.hidden = savedWorkouts.length === 0;
+  workoutsEmptyElement.hidden = savedWorkouts.length > 0;
+}
+
+function createSavedWorkoutCard(workout) {
+  const card = document.createElement('article');
+  const header = document.createElement('header');
+  const title = document.createElement('h3');
+  const menuButton = document.createElement('button');
+  const menu = document.createElement('div');
+  const editButton = document.createElement('button');
+  const deleteButton = document.createElement('button');
+  const details = document.createElement('dl');
+  const total = document.createElement('p');
+  const startButton = document.createElement('button');
+
+  card.className = 'saved-workout-card';
+  header.className = 'saved-workout-card__header';
+  title.className = 'saved-workout-card__title';
+  title.textContent = workout.name;
+  menuButton.className = 'saved-workout-card__menu-button';
+  menuButton.type = 'button';
+  menuButton.dataset.workoutMenuButton = workout.id;
+  menuButton.setAttribute('aria-label', `Меню тренировки «${workout.name}»`);
+  menuButton.setAttribute('aria-expanded', 'false');
+  menuButton.innerHTML = '<svg viewBox="0 0 24 24" aria-hidden="true" focusable="false"><circle cx="5" cy="12" r="1.5"></circle><circle cx="12" cy="12" r="1.5"></circle><circle cx="19" cy="12" r="1.5"></circle></svg>';
+  menu.className = 'saved-workout-card__menu';
+  menu.dataset.workoutMenu = workout.id;
+  menu.hidden = true;
+  menu.setAttribute('role', 'menu');
+  editButton.className = 'saved-workout-card__menu-action';
+  editButton.type = 'button';
+  editButton.dataset.workoutMenuAction = 'edit';
+  editButton.dataset.workoutId = workout.id;
+  editButton.textContent = 'Изменить';
+  deleteButton.className = 'saved-workout-card__menu-action saved-workout-card__menu-action--danger';
+  deleteButton.type = 'button';
+  deleteButton.dataset.workoutMenuAction = 'delete';
+  deleteButton.dataset.workoutId = workout.id;
+  deleteButton.textContent = 'Удалить';
+  menu.append(editButton, deleteButton);
+  details.className = 'saved-workout-card__details';
+  details.append(
+    createSavedWorkoutMetric('Бег', formatTime(workout.run), 'run'),
+    createSavedWorkoutMetric('Ходьба', formatTime(workout.walk), 'walk'),
+    createSavedWorkoutMetric('Циклы', String(workout.cycles)),
+  );
+  total.className = 'saved-workout-card__total';
+  total.textContent = `Общее время: ${formatSavedWorkoutTotal(workout)}`;
+  startButton.className = 'saved-workout-card__start';
+  startButton.type = 'button';
+  startButton.dataset.startSavedWorkout = workout.id;
+  startButton.textContent = 'НАЧАТЬ';
+  header.append(title, menuButton, menu);
+  card.append(header, details, total, startButton);
+
+  return card;
+}
+
+function createSavedWorkoutMetric(label, value, variant) {
+  const metric = document.createElement('div');
+  const term = document.createElement('dt');
+  const description = document.createElement('dd');
+
+  metric.className = `saved-workout-card__metric saved-workout-card__metric--${variant}`;
   term.textContent = label;
   description.textContent = value;
   metric.append(term, description);
@@ -510,20 +900,48 @@ function createHistoryMetric(label, value, variant = '') {
   return metric;
 }
 
-function formatHistoryDate(isoDate) {
-  return new Intl.DateTimeFormat('ru-RU', {
-    day: '2-digit',
-    month: 'short',
-    year: 'numeric',
-    hour: '2-digit',
-    minute: '2-digit',
-  }).format(new Date(isoDate));
+function formatSavedWorkoutTotal(workout) {
+  const totalSeconds = workout.warmup
+    + (workout.run + workout.walk) * workout.cycles
+    + workout.cooldown;
+  const minutes = Math.floor(totalSeconds / 60);
+  const seconds = totalSeconds % 60;
+
+  return seconds === 0 ? `${minutes} мин` : `${minutes} мин ${seconds} сек`;
+}
+
+function toggleWorkoutMenu(menuButton) {
+  const workoutId = menuButton.dataset.workoutMenuButton;
+  const menu = workoutsListElement.querySelector(`[data-workout-menu="${workoutId}"]`);
+  const isOpen = menuButton.getAttribute('aria-expanded') === 'true';
+
+  workoutsListElement.querySelectorAll('[data-workout-menu-button]').forEach((button) => {
+    button.setAttribute('aria-expanded', 'false');
+  });
+  workoutsListElement.querySelectorAll('[data-workout-menu]').forEach((item) => {
+    item.hidden = true;
+  });
+
+  if (!isOpen) {
+    menuButton.setAttribute('aria-expanded', 'true');
+    menu.hidden = false;
+  }
+}
+
+function getWorkoutConfiguration(source) {
+  return {
+    warmup: source.warmup,
+    run: source.run,
+    walk: source.walk,
+    cycles: source.cycles,
+    cooldown: source.cooldown,
+  };
 }
 
 function renderWorkout(state) {
   workoutScreenElement.style.setProperty('--route-progress', `${state.totalProgress * 100}%`);
   provideWorkoutVibration(state);
-  provideWorkoutSound(state);
+  provideWorkoutSpeech(state);
 
   const renderKey = [
     state.status,
@@ -591,8 +1009,8 @@ function toggleSound() {
   renderSoundSetting();
   saveSettings();
 
-  if (soundEnabled) {
-    unlockAudio();
+  if (!soundEnabled) {
+    cancelCountdownSpeech();
   }
 }
 
@@ -605,96 +1023,129 @@ function renderSoundSetting() {
   );
 }
 
-function provideWorkoutSound(state) {
-  if (!soundEnabled || state.status === 'paused' || state.status === 'stopped') {
-    return;
-  }
+function applyThemePreference() {
+  const root = document.documentElement;
 
-  if (state.stage !== lastAudioStage) {
-    playStageSound();
-    lastAudioStage = state.stage;
-  }
+  root.dataset.theme = themePreference;
 
-  if (state.status === 'running' && state.remainingSeconds === 3) {
-    const warningKey = `${state.stage}:${state.currentCycle}`;
-
-    if (warningKey !== lastWarningSoundKey) {
-      lastWarningSoundKey = warningKey;
-      playTone(720, 0.08, 0, 0.045);
-    }
+  if (themeColorElement) {
+    themeColorElement.content = getComputedStyle(root)
+      .getPropertyValue('--color-background')
+      .trim();
   }
 }
 
-function playStageSound() {
-  playTone(520, 0.1, 0, 0.055);
-  playTone(760, 0.16, 0.12, 0.065);
+function renderThemePreference() {
+  themeOptionsElement.querySelectorAll('[data-theme-option]').forEach((option) => {
+    option.setAttribute(
+      'aria-checked',
+      String(option.dataset.themeOption === themePreference),
+    );
+  });
 }
 
-function playTone(frequency, durationSeconds, delaySeconds, volume) {
-  const context = unlockAudio();
-
-  if (!context) {
-    return;
-  }
-
-  try {
-    const oscillator = context.createOscillator();
-    const gain = context.createGain();
-    const startsAt = context.currentTime + delaySeconds;
-    const endsAt = startsAt + durationSeconds;
-
-    oscillator.type = 'sine';
-    oscillator.frequency.setValueAtTime(frequency, startsAt);
-    gain.gain.setValueAtTime(0.0001, startsAt);
-    gain.gain.linearRampToValueAtTime(volume, startsAt + 0.01);
-    gain.gain.exponentialRampToValueAtTime(0.0001, endsAt);
-    oscillator.connect(gain);
-    gain.connect(context.destination);
-    oscillator.start(startsAt);
-    oscillator.stop(endsAt);
-  } catch {
-    // Audio feedback is optional and must not interrupt the workout.
-  }
-}
-
-function unlockAudio() {
+function provideWorkoutSpeech(state) {
   if (!soundEnabled) {
-    return null;
+    return;
   }
 
-  const AudioContextClass = globalThis.AudioContext || globalThis.webkitAudioContext;
+  if (state.status !== 'running') {
+    cancelCountdownSpeech();
+    return;
+  }
 
-  if (typeof AudioContextClass !== 'function') {
-    return null;
+  if (state.stage !== lastSpeechStage) {
+    cancelCountdownSpeech();
+    lastSpeechStage = state.stage;
+  }
+
+  const spokenNumber = spokenCountdownNumbers[state.remainingSeconds];
+
+  if (!spokenNumber) {
+    return;
+  }
+
+  const speechKey = `${state.stage}:${state.currentCycle}:${state.remainingSeconds}`;
+
+  if (speechKey === lastSpokenCountdownKey) {
+    return;
+  }
+
+  lastSpokenCountdownKey = speechKey;
+  speakCountdownNumber(spokenNumber);
+}
+
+function speakCountdownNumber(number) {
+  const synthesis = globalThis.speechSynthesis;
+  const SpeechUtterance = globalThis.SpeechSynthesisUtterance;
+
+  if (!synthesis
+    || typeof synthesis.speak !== 'function'
+    || typeof SpeechUtterance !== 'function') {
+    return;
   }
 
   try {
-    audioContext ??= new AudioContextClass();
+    const utterance = new SpeechUtterance(number);
+    const voice = getPreferredSpeechVoice(synthesis);
 
-    if (audioContext.state === 'suspended') {
-      audioContext.resume().catch(() => {});
+    utterance.lang = 'ru-RU';
+    utterance.rate = 1.05;
+
+    if (voice) {
+      utterance.voice = voice;
     }
 
-    return audioContext;
+    synthesis.speak(utterance);
+  } catch {
+    // Speech cues are optional and must not interrupt the workout.
+  }
+}
+
+function getPreferredSpeechVoice(synthesis) {
+  try {
+    const voices = typeof synthesis.getVoices === 'function'
+      ? synthesis.getVoices()
+      : [];
+
+    return voices.find((voice) => voice.lang?.toLowerCase() === 'ru-ru')
+      ?? voices.find((voice) => voice.lang?.toLowerCase().startsWith('ru'))
+      ?? voices.find((voice) => voice.default)
+      ?? voices[0]
+      ?? null;
   } catch {
     return null;
   }
 }
 
-function buildWorkoutRoute() {
+function cancelCountdownSpeech() {
+  const synthesis = globalThis.speechSynthesis;
+
+  if (!synthesis || typeof synthesis.cancel !== 'function') {
+    return;
+  }
+
+  try {
+    synthesis.cancel();
+  } catch {
+    // Speech cues are optional and must not interrupt the workout.
+  }
+}
+
+function buildWorkoutRoute(workoutConfiguration) {
   const segments = [];
 
-  if (settings.warmup > 0) {
-    segments.push({ stage: 'warmup', duration: settings.warmup, label: 'Разминка' });
+  if (workoutConfiguration.warmup > 0) {
+    segments.push({ stage: 'warmup', duration: workoutConfiguration.warmup, label: 'Разминка' });
   }
 
-  for (let cycle = 1; cycle <= settings.cycles; cycle += 1) {
-    segments.push({ stage: 'run', duration: settings.run, label: `Бег, цикл ${cycle}` });
-    segments.push({ stage: 'walk', duration: settings.walk, label: `Ходьба, цикл ${cycle}` });
+  for (let cycle = 1; cycle <= workoutConfiguration.cycles; cycle += 1) {
+    segments.push({ stage: 'run', duration: workoutConfiguration.run, label: `Бег, цикл ${cycle}` });
+    segments.push({ stage: 'walk', duration: workoutConfiguration.walk, label: `Ходьба, цикл ${cycle}` });
   }
 
-  if (settings.cooldown > 0) {
-    segments.push({ stage: 'cooldown', duration: settings.cooldown, label: 'Заминка' });
+  if (workoutConfiguration.cooldown > 0) {
+    segments.push({ stage: 'cooldown', duration: workoutConfiguration.cooldown, label: 'Заминка' });
   }
 
   const routeFragment = document.createDocumentFragment();
@@ -713,7 +1164,7 @@ function buildWorkoutRoute() {
   workoutRouteElement.classList.toggle('is-compact', segments.length > 20);
   workoutRouteElement.setAttribute(
     'aria-label',
-    `Маршрут тренировки: ${settings.cycles} ${formatCyclesLabel(settings.cycles)}, бег ${formatTime(settings.run)}, ходьба ${formatTime(settings.walk)}`,
+    `Маршрут тренировки: ${workoutConfiguration.cycles} ${formatCyclesLabel(workoutConfiguration.cycles)}, бег ${formatTime(workoutConfiguration.run)}, ходьба ${formatTime(workoutConfiguration.walk)}`,
   );
 }
 
@@ -749,14 +1200,18 @@ function formatNextStage(state) {
 }
 
 function renderSettings() {
-  document.querySelectorAll('[data-setting]').forEach((row) => {
-    renderSetting(row, row.dataset.setting);
+  renderWorkoutSettings(homeElement, settings);
+}
+
+function renderWorkoutSettings(container, workoutConfiguration) {
+  container.querySelectorAll('[data-setting]').forEach((row) => {
+    renderSetting(row, row.dataset.setting, workoutConfiguration);
   });
 }
 
-function renderSetting(row, key) {
+function renderSetting(row, key, workoutConfiguration = settings) {
   const config = settingsConfig[key];
-  const value = settings[key];
+  const value = workoutConfiguration[key];
   const firstValue = config.allowedValues[0];
   const lastValue = config.allowedValues.at(-1);
 
@@ -862,16 +1317,6 @@ function loadSettings(savedSettings) {
   return defaults;
 }
 
-function loadMode(savedSettings) {
-  const savedMode = savedSettings?.mode;
-
-  if (savedMode === 'custom' || Object.hasOwn(presets, savedMode)) {
-    return savedMode;
-  }
-
-  return 'custom';
-}
-
 function loadSoundEnabled(savedSettings) {
   const savedValue = savedSettings?.sound;
 
@@ -885,6 +1330,12 @@ function loadSoundEnabled(savedSettings) {
     : true;
 }
 
+function loadThemePreference(savedSettings) {
+  const savedTheme = savedSettings?.theme;
+
+  return ['light', 'dark'].includes(savedTheme) ? savedTheme : 'dark';
+}
+
 function saveSettings() {
   try {
     localStorage.setItem(
@@ -896,7 +1347,7 @@ function saveSettings() {
         cycles: settings.cycles,
         cooldown: settings.cooldown,
         sound: soundEnabled,
-        mode: activeMode,
+        theme: themePreference,
       }),
     );
   } catch {
