@@ -13,12 +13,12 @@ const spokenCountdownNumbers = Object.freeze({
 const settingsConfig = {
   warmup: {
     defaultValue: 180,
-    allowedValues: createDurationValues(0, 10 * 60),
+    allowedValues: createDurationValues(0, 15 * 60),
     format: formatTime,
   },
   run: {
     defaultValue: 120,
-    allowedValues: createDurationValues(10, 30 * 60),
+    allowedValues: createRunDurationValues(),
     format: formatTime,
   },
   walk: {
@@ -28,13 +28,8 @@ const settingsConfig = {
   },
   cycles: {
     defaultValue: 6,
-    allowedValues: createIntegerRange(1, 30),
+    allowedValues: createIntegerRange(1, 100),
     format: String,
-  },
-  cooldown: {
-    defaultValue: 180,
-    allowedValues: createDurationValues(0, 10 * 60),
-    format: formatTime,
   },
 };
 
@@ -78,11 +73,11 @@ const resultRepeatElement = document.querySelector('[data-result-repeat]');
 const resultHomeElement = document.querySelector('[data-result-home]');
 const workoutsListElement = document.querySelector('[data-workouts-list]');
 const workoutsEmptyElement = document.querySelector('[data-workouts-empty]');
+const workoutsCreateMoreElement = document.querySelector('[data-workouts-create-more]');
 const calendarMonthElement = document.querySelector('[data-calendar-month]');
 const calendarGridElement = document.querySelector('[data-calendar-grid]');
 const calendarPreviousElement = document.querySelector('[data-calendar-previous]');
 const calendarNextElement = document.querySelector('[data-calendar-next]');
-const historyDayTitleElement = document.querySelector('[data-history-day-title]');
 const historyDayListElement = document.querySelector('[data-history-day-list]');
 const historyDayEmptyElement = document.querySelector('[data-history-day-empty]');
 const workoutEditorElement = document.querySelector('[data-workout-editor]');
@@ -93,17 +88,23 @@ const workoutNameErrorElement = document.querySelector('[data-workout-name-error
 const closeWorkoutEditorElement = document.querySelector('[data-close-workout-editor]');
 const workoutEditorTitleElement = document.querySelector('[data-workout-editor-title]');
 const workoutEditorSaveElement = document.querySelector('[data-workout-editor-save]');
+const deleteConfirmationElement = document.querySelector('[data-delete-confirmation]');
+const deleteWorkoutNameElement = document.querySelector('[data-delete-workout-name]');
+const cancelDeleteWorkoutElement = document.querySelector('[data-cancel-delete-workout]');
+const confirmDeleteWorkoutElement = document.querySelector('[data-confirm-delete-workout]');
 let workoutSession = null;
 let activeWorkoutConfiguration = null;
 let activeWorkoutName = 'Своя тренировка';
 let workoutDraftConfiguration = null;
 let editingWorkoutId = null;
+let pendingDeleteWorkoutId = null;
 let workoutAnimationFrameId = null;
 let lastWorkoutRenderKey = '';
 let lastVibrationStage = null;
 let lastCountdownVibrationKey = '';
 let lastSpeechStage = null;
 let lastSpokenCountdownKey = '';
+let hasAnnouncedWorkoutCompletion = false;
 let currentScreen = 'home';
 const initialCalendarDate = new Date();
 let historyCalendarMonth = new Date(
@@ -133,9 +134,15 @@ const stageContent = {
   WARMUP: { label: 'РАЗМИНКА', nextLabel: 'Разминка' },
   RUN: { label: 'БЕГ', nextLabel: 'Бег' },
   WALK: { label: 'ХОДЬБА', nextLabel: 'Ходьба' },
-  COOLDOWN: { label: 'ЗАМИНКА', nextLabel: 'Заминка' },
   FINISHED: { label: 'ГОТОВО', nextLabel: 'Финиш' },
 };
+
+const stageSpeechContent = Object.freeze({
+  PREPARE: 'Приготовьтесь',
+  WARMUP: 'Разминка',
+  RUN: 'Бег',
+  WALK: 'Ходьба',
+});
 
 renderSettings();
 renderSoundSetting();
@@ -265,12 +272,7 @@ workoutsScreenElement.addEventListener('click', (event) => {
     return;
   }
 
-  const shouldDelete = typeof window.confirm !== 'function'
-    || window.confirm(`Удалить тренировку «${workout.name}»?`);
-
-  if (shouldDelete && globalThis.deleteWorkout(workoutId)) {
-    renderSavedWorkouts();
-  }
+  openDeleteConfirmation(workout);
 });
 
 homeElement.addEventListener('click', (event) => {
@@ -284,6 +286,13 @@ workoutEditorSettingsElement.addEventListener('click', (event) => {
 });
 
 closeWorkoutEditorElement.addEventListener('click', closeWorkoutEditor);
+cancelDeleteWorkoutElement.addEventListener('click', closeDeleteConfirmation);
+confirmDeleteWorkoutElement.addEventListener('click', confirmDeleteWorkout);
+deleteConfirmationElement.addEventListener('click', (event) => {
+  if (event.target === deleteConfirmationElement) {
+    closeDeleteConfirmation();
+  }
+});
 workoutNameElement.addEventListener('input', clearWorkoutNameError);
 workoutEditorFormElement.addEventListener('submit', (event) => {
   event.preventDefault();
@@ -326,7 +335,6 @@ function startWorkout(workoutConfiguration, workoutName = 'Своя тренир
     run: activeWorkoutConfiguration.run,
     walk: activeWorkoutConfiguration.walk,
     cycles: activeWorkoutConfiguration.cycles,
-    cooldown: activeWorkoutConfiguration.cooldown,
   });
 
   startPreparation();
@@ -376,7 +384,8 @@ function beginWorkout() {
   lastCountdownVibrationKey = '';
   lastSpeechStage = null;
   lastSpokenCountdownKey = '';
-  cancelCountdownSpeech();
+  hasAnnouncedWorkoutCompletion = false;
+  cancelWorkoutSpeech();
 
   if (!workoutSession) {
     return;
@@ -420,7 +429,7 @@ function pauseWorkout() {
 
   const pausedState = workoutSession.pause();
 
-  cancelCountdownSpeech();
+  cancelWorkoutSpeech();
   renderWorkout(pausedState);
 
   if (pausedState.status !== 'paused') {
@@ -460,7 +469,7 @@ function finishWorkout() {
   }
 
   workoutSession.stop();
-  cancelCountdownSpeech();
+  cancelWorkoutSpeech();
 
   if (workoutAnimationFrameId !== null) {
     cancelAnimationFrame(workoutAnimationFrameId);
@@ -476,8 +485,12 @@ function showWorkoutResult() {
     return;
   }
 
-  cancelCountdownSpeech();
   const summary = workoutSession.getSummary();
+
+  if (summary.status !== 'finished') {
+    cancelWorkoutSpeech();
+  }
+
   const workoutRecord = createWorkoutRecord(summary);
 
   globalThis.saveWorkoutHistoryRecord(workoutRecord);
@@ -489,6 +502,12 @@ function showWorkoutResult() {
   resultPercentageElement.textContent = `${summary.completionPercentage}%`;
   pauseOverlayElement.hidden = true;
   showScreen('result');
+
+  if (summary.status === 'finished' && !hasAnnouncedWorkoutCompletion) {
+    hasAnnouncedWorkoutCompletion = true;
+    speakText('Тренировка завершена. Ты сделал это!');
+  }
+
   workoutSession = null;
   resultHomeElement.focus();
 }
@@ -560,6 +579,7 @@ function showScreen(screenName) {
 
 function updateBottomNavigation(screenName) {
   const isHidden = !workoutEditorElement.hidden
+    || !deleteConfirmationElement.hidden
     || ['countdown', 'workout', 'result'].includes(screenName);
 
   bottomNavigationElement.hidden = isHidden;
@@ -636,14 +656,16 @@ function renderHistoryCalendar() {
 
 function renderSelectedHistoryDay() {
   const workouts = globalThis.getWorkoutsForDate(selectedHistoryDate)
-    .sort((first, second) => Date.parse(first.endedAt) - Date.parse(second.endedAt));
+    .sort((first, second) => (
+      second.totalDuration - first.totalDuration
+      || Date.parse(second.endedAt) - Date.parse(first.endedAt)
+    ));
   const fragment = document.createDocumentFragment();
 
   workouts.forEach((workout) => {
     fragment.append(createHistoryDayCard(workout));
   });
 
-  historyDayTitleElement.textContent = formatHistoryDayTitle(selectedHistoryDate);
   historyDayListElement.replaceChildren(fragment);
   historyDayListElement.hidden = workouts.length === 0;
   historyDayEmptyElement.hidden = workouts.length > 0;
@@ -665,14 +687,18 @@ function createHistoryDayCard(workout) {
   time.dateTime = workout.endedAt;
   time.textContent = formatHistoryWorkoutTime(workout.endedAt);
   duration.className = 'history-day-card__duration';
-  duration.textContent = formatHistoryWorkoutDuration(workout.totalDuration);
+  duration.textContent = formatTotalDuration(workout.totalDuration);
   details.className = 'history-day-card__details';
   details.append(
     createHistoryDayMetric('Бег', formatHistoryWorkoutDuration(workout.runDuration), 'run'),
     createHistoryDayMetric('Ходьба', formatHistoryWorkoutDuration(workout.walkDuration), 'walk'),
     createHistoryDayMetric('Циклы', `${workout.completedCycles} / ${workout.totalCycles}`),
   );
-  header.append(title, time);
+  if (workout.name !== 'Своя тренировка') {
+    header.append(title);
+  }
+
+  header.append(time);
   card.append(header, duration, details);
 
   return card;
@@ -691,30 +717,6 @@ function createHistoryDayMetric(label, value, variant = '') {
   return metric;
 }
 
-function formatHistoryDayTitle(dateKey) {
-  const [year, month, day] = dateKey.split('-').map(Number);
-  const monthNames = [
-    'января',
-    'февраля',
-    'марта',
-    'апреля',
-    'мая',
-    'июня',
-    'июля',
-    'августа',
-    'сентября',
-    'октября',
-    'ноября',
-    'декабря',
-  ];
-
-  if (!Number.isInteger(year) || !Number.isInteger(month) || !Number.isInteger(day)) {
-    return '';
-  }
-
-  return `${day} ${monthNames[month - 1]}`;
-}
-
 function formatHistoryWorkoutTime(timestamp) {
   return new Intl.DateTimeFormat('ru-RU', {
     hour: '2-digit',
@@ -728,6 +730,28 @@ function formatHistoryWorkoutDuration(totalSeconds) {
   const seconds = totalSeconds % 60;
 
   return seconds === 0 ? `${minutes} мин` : `${minutes} мин ${seconds} сек`;
+}
+
+function formatTotalDuration(totalSeconds) {
+  const hours = Math.floor(totalSeconds / 3600);
+  const minutes = Math.floor((totalSeconds % 3600) / 60);
+  const seconds = totalSeconds % 60;
+
+  if (hours === 0) {
+    return formatHistoryWorkoutDuration(totalSeconds);
+  }
+
+  const parts = [`${hours} ч`];
+
+  if (minutes > 0) {
+    parts.push(`${minutes} мин`);
+  }
+
+  if (seconds > 0) {
+    parts.push(`${seconds} сек`);
+  }
+
+  return parts.join(' ');
 }
 
 function createCalendarFlame() {
@@ -782,6 +806,38 @@ function closeWorkoutEditor() {
   updateBottomNavigation(currentScreen);
 }
 
+function openDeleteConfirmation(workout) {
+  pendingDeleteWorkoutId = workout.id;
+  deleteWorkoutNameElement.textContent = workout.name;
+  deleteConfirmationElement.hidden = false;
+  updateBottomNavigation(currentScreen);
+  requestAnimationFrame(() => confirmDeleteWorkoutElement.focus());
+}
+
+function closeDeleteConfirmation() {
+  deleteConfirmationElement.hidden = true;
+  pendingDeleteWorkoutId = null;
+  deleteWorkoutNameElement.textContent = '';
+  updateBottomNavigation(currentScreen);
+}
+
+function confirmDeleteWorkout() {
+  const workoutId = pendingDeleteWorkoutId;
+
+  if (!workoutId) {
+    closeDeleteConfirmation();
+    return;
+  }
+
+  const wasDeleted = globalThis.deleteWorkout(workoutId);
+
+  closeDeleteConfirmation();
+
+  if (wasDeleted) {
+    renderSavedWorkouts();
+  }
+}
+
 function showWorkoutNameError(message) {
   workoutNameErrorElement.textContent = message;
   workoutNameErrorElement.hidden = false;
@@ -830,6 +886,7 @@ function renderSavedWorkouts() {
   workoutsListElement.replaceChildren(fragment);
   workoutsListElement.hidden = savedWorkouts.length === 0;
   workoutsEmptyElement.hidden = savedWorkouts.length > 0;
+  workoutsCreateMoreElement.hidden = savedWorkouts.length === 0;
 }
 
 function createSavedWorkoutCard(workout) {
@@ -902,12 +959,9 @@ function createSavedWorkoutMetric(label, value, variant) {
 
 function formatSavedWorkoutTotal(workout) {
   const totalSeconds = workout.warmup
-    + (workout.run + workout.walk) * workout.cycles
-    + workout.cooldown;
-  const minutes = Math.floor(totalSeconds / 60);
-  const seconds = totalSeconds % 60;
+    + (workout.run + workout.walk) * workout.cycles;
 
-  return seconds === 0 ? `${minutes} мин` : `${minutes} мин ${seconds} сек`;
+  return formatTotalDuration(totalSeconds);
 }
 
 function toggleWorkoutMenu(menuButton) {
@@ -934,7 +988,6 @@ function getWorkoutConfiguration(source) {
     run: source.run,
     walk: source.walk,
     cycles: source.cycles,
-    cooldown: source.cooldown,
   };
 }
 
@@ -1010,7 +1063,7 @@ function toggleSound() {
   saveSettings();
 
   if (!soundEnabled) {
-    cancelCountdownSpeech();
+    cancelWorkoutSpeech();
   }
 }
 
@@ -1050,13 +1103,19 @@ function provideWorkoutSpeech(state) {
   }
 
   if (state.status !== 'running') {
-    cancelCountdownSpeech();
+    if (state.status !== 'finished') {
+      cancelWorkoutSpeech();
+    }
+
     return;
   }
 
   if (state.stage !== lastSpeechStage) {
-    cancelCountdownSpeech();
+    const isFirstStage = lastSpeechStage === null;
+
     lastSpeechStage = state.stage;
+    lastSpokenCountdownKey = '';
+    speakWorkoutStage(state.stage, isFirstStage);
   }
 
   const spokenNumber = spokenCountdownNumbers[state.remainingSeconds];
@@ -1072,10 +1131,22 @@ function provideWorkoutSpeech(state) {
   }
 
   lastSpokenCountdownKey = speechKey;
-  speakCountdownNumber(spokenNumber);
+  speakText(spokenNumber);
 }
 
-function speakCountdownNumber(number) {
+function speakWorkoutStage(stage, isFirstStage) {
+  const speech = stageSpeechContent[stage];
+
+  if (speech) {
+    speakText(isFirstStage ? `Тренировка началась. ${speech}` : speech);
+  }
+}
+
+function speakText(text) {
+  if (!soundEnabled) {
+    return;
+  }
+
   const synthesis = globalThis.speechSynthesis;
   const SpeechUtterance = globalThis.SpeechSynthesisUtterance;
 
@@ -1086,7 +1157,7 @@ function speakCountdownNumber(number) {
   }
 
   try {
-    const utterance = new SpeechUtterance(number);
+    const utterance = new SpeechUtterance(text);
     const voice = getPreferredSpeechVoice(synthesis);
 
     utterance.lang = 'ru-RU';
@@ -1118,7 +1189,7 @@ function getPreferredSpeechVoice(synthesis) {
   }
 }
 
-function cancelCountdownSpeech() {
+function cancelWorkoutSpeech() {
   const synthesis = globalThis.speechSynthesis;
 
   if (!synthesis || typeof synthesis.cancel !== 'function') {
@@ -1142,10 +1213,6 @@ function buildWorkoutRoute(workoutConfiguration) {
   for (let cycle = 1; cycle <= workoutConfiguration.cycles; cycle += 1) {
     segments.push({ stage: 'run', duration: workoutConfiguration.run, label: `Бег, цикл ${cycle}` });
     segments.push({ stage: 'walk', duration: workoutConfiguration.walk, label: `Ходьба, цикл ${cycle}` });
-  }
-
-  if (workoutConfiguration.cooldown > 0) {
-    segments.push({ stage: 'cooldown', duration: workoutConfiguration.cooldown, label: 'Заминка' });
   }
 
   const routeFragment = document.createDocumentFragment();
@@ -1268,6 +1335,20 @@ function createDurationValues(minSeconds, maxSeconds) {
   return values;
 }
 
+function createRunDurationValues() {
+  const values = [];
+
+  for (let seconds = 10; seconds <= 60; seconds += 5) {
+    values.push(seconds);
+  }
+
+  for (let seconds = 70; seconds <= 30 * 60; seconds += 10) {
+    values.push(seconds);
+  }
+
+  return values;
+}
+
 function createIntegerRange(min, max) {
   return Array.from({ length: max - min + 1 }, (_, index) => min + index);
 }
@@ -1345,7 +1426,6 @@ function saveSettings() {
         run: settings.run,
         walk: settings.walk,
         cycles: settings.cycles,
-        cooldown: settings.cooldown,
         sound: soundEnabled,
         theme: themePreference,
       }),

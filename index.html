@@ -58,15 +58,6 @@
             </div>
           </div>
 
-          <div class="setting-row" data-setting="cooldown">
-            <p class="setting-row__label" id="cooldown-label">Заминка</p>
-            <div class="stepper" aria-labelledby="cooldown-label">
-              <button class="stepper__button" type="button" data-direction="decrease" aria-label="Уменьшить время заминки">−</button>
-              <output class="stepper__value" data-value aria-live="polite">03:00</output>
-              <button class="stepper__button" type="button" data-direction="increase" aria-label="Увеличить время заминки">+</button>
-            </div>
-          </div>
-
           <button class="start-button" type="button">НАЧАТЬ ТРЕНИРОВКУ</button>
         </section>
 
@@ -81,6 +72,7 @@
           </div>
 
           <div class="workouts-list" data-workouts-list hidden></div>
+          <button class="workouts-screen__create-more" type="button" data-create-workout data-workouts-create-more hidden>СОЗДАТЬ ЕЩЁ ТРЕНИРОВКУ</button>
         </section>
 
         <section class="prepare-screen screen" data-screen="countdown" aria-labelledby="prepare-title" hidden>
@@ -164,11 +156,7 @@
           </div>
         </section>
 
-        <section class="history-screen screen" data-screen="history" aria-labelledby="history-title" hidden>
-          <header class="history-screen__header">
-            <h2 class="history-screen__title" id="history-title">ИСТОРИЯ</h2>
-          </header>
-
+        <section class="history-screen screen" data-screen="history" aria-label="История" hidden>
           <div class="history-calendar">
             <div class="history-calendar__header">
               <button class="history-calendar__navigation" type="button" data-calendar-previous aria-label="Предыдущий месяц">
@@ -193,8 +181,7 @@
             <div class="history-calendar__grid" data-calendar-grid role="grid"></div>
           </div>
 
-          <section class="history-day" aria-labelledby="history-day-title">
-            <h3 class="history-day__title" id="history-day-title" data-history-day-title></h3>
+          <section class="history-day" aria-label="Тренировки выбранного дня">
             <div class="history-day__list" data-history-day-list></div>
             <p class="history-day__empty" data-history-day-empty>В этот день тренировок не было</p>
           </section>
@@ -278,18 +265,24 @@
               </div>
             </div>
 
-            <div class="setting-row" data-setting="cooldown">
-              <p class="setting-row__label" id="editor-cooldown-label">Заминка</p>
-              <div class="stepper" aria-labelledby="editor-cooldown-label">
-                <button class="stepper__button" type="button" data-direction="decrease" aria-label="Уменьшить время заминки">−</button>
-                <output class="stepper__value" data-value aria-live="polite">03:00</output>
-                <button class="stepper__button" type="button" data-direction="increase" aria-label="Увеличить время заминки">+</button>
-              </div>
-            </div>
           </div>
 
           <button class="workout-editor__save" type="submit" data-workout-editor-save>СОХРАНИТЬ</button>
         </form>
+      </div>
+
+      <div class="delete-confirmation" data-delete-confirmation role="dialog" aria-modal="true" aria-labelledby="delete-confirmation-title" aria-describedby="delete-confirmation-description" hidden>
+        <section class="delete-confirmation__panel">
+          <h2 class="delete-confirmation__title" id="delete-confirmation-title">Удалить тренировку?</h2>
+          <p class="delete-confirmation__description" id="delete-confirmation-description">
+            «<strong data-delete-workout-name></strong>» будет удалено.<br>
+            Это действие нельзя отменить.
+          </p>
+          <div class="delete-confirmation__actions">
+            <button class="delete-confirmation__cancel" type="button" data-cancel-delete-workout>ОТМЕНА</button>
+            <button class="delete-confirmation__confirm" type="button" data-confirm-delete-workout>УДАЛИТЬ</button>
+          </div>
+        </section>
       </div>
 
       <nav class="bottom-navigation" aria-label="Основная навигация" data-bottom-navigation>

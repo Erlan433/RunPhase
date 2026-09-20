@@ -4,11 +4,10 @@
   const SAVED_WORKOUTS_STORAGE_KEY = 'runphase-saved-workouts';
 
   const workoutFields = Object.freeze({
-    warmup: { min: 0, max: 10 * 60 },
+    warmup: { min: 0, max: 15 * 60 },
     run: { min: 10, max: 30 * 60 },
     walk: { min: 10, max: 15 * 60 },
-    cycles: { min: 1, max: 30 },
-    cooldown: { min: 0, max: 10 * 60 },
+    cycles: { min: 1, max: 100 },
   });
 
   function getSavedWorkouts() {
@@ -46,8 +45,9 @@
     const currentWorkout = workouts[workoutIndex];
     const values = validateWorkoutValues({ ...currentWorkout, ...changes });
     const updatedWorkout = {
-      ...currentWorkout,
+      id: currentWorkout.id,
       ...values,
+      createdAt: currentWorkout.createdAt,
       updatedAt: createUpdatedTimestamp(currentWorkout.updatedAt),
     };
 
@@ -186,7 +186,16 @@
   }
 
   function cloneWorkout(workout) {
-    return { ...workout };
+    return {
+      id: workout.id,
+      name: workout.name,
+      warmup: workout.warmup,
+      run: workout.run,
+      walk: workout.walk,
+      cycles: workout.cycles,
+      createdAt: workout.createdAt,
+      updatedAt: workout.updatedAt,
+    };
   }
 
   Object.assign(globalThis, {

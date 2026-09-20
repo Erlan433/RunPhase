@@ -5,7 +5,6 @@ const WORKOUT_STAGE = Object.freeze({
   WARMUP: 'WARMUP',
   RUN: 'RUN',
   WALK: 'WALK',
-  COOLDOWN: 'COOLDOWN',
   FINISHED: 'FINISHED',
 });
 
@@ -23,10 +22,10 @@ class WorkoutSession {
    * `now` is injectable so the timeline can be tested without real delays.
    */
   constructor(
-    { prepare = 3, warmup, run, walk, cycles, cooldown },
+    { prepare = 3, warmup, run, walk, cycles },
     { now = Date.now } = {},
   ) {
-    this.settings = validateSettings({ prepare, warmup, run, walk, cycles, cooldown });
+    this.settings = validateSettings({ prepare, warmup, run, walk, cycles });
 
     if (typeof now !== 'function') {
       throw new TypeError('now must be a function');
@@ -246,19 +245,15 @@ function createTimeline(settings) {
     addSegment(WORKOUT_STAGE.WALK, settings.walk, cycle);
   }
 
-  addSegment(WORKOUT_STAGE.COOLDOWN, settings.cooldown, settings.cycles);
-
   return timeline;
 }
 
 function validateSettings(settings) {
   validateIntegerInRange('prepare', settings.prepare, 0, Number.MAX_SAFE_INTEGER);
-  validateIntegerInRange('warmup', settings.warmup, 0, 10 * 60);
+  validateIntegerInRange('warmup', settings.warmup, 0, 15 * 60);
   validateIntegerInRange('run', settings.run, 10, 30 * 60);
   validateIntegerInRange('walk', settings.walk, 10, 15 * 60);
-  validateIntegerInRange('cycles', settings.cycles, 1, 30);
-  validateIntegerInRange('cooldown', settings.cooldown, 0, 10 * 60);
-
+  validateIntegerInRange('cycles', settings.cycles, 1, 100);
   return Object.freeze({ ...settings });
 }
 
