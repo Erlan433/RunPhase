@@ -1,0 +1,7 @@
+<?xml version='1.0' encoding='utf-8'?>
+<resources>
+    <string name="app_name">Runira</string>
+    <string name="title_activity_main">Runira</string>
+    <string name="package_name">com.runira.app</string>
+    <string name="custom_url_scheme">com.runira.app</string>
+</resources>
