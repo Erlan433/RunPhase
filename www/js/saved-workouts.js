@@ -105,7 +105,7 @@
         ids.add(workout.id);
         return true;
       });
-    } catch {
+    } catch (error) {
       return [];
     }
   }
@@ -114,7 +114,7 @@
     try {
       localStorage.setItem(SAVED_WORKOUTS_STORAGE_KEY, JSON.stringify(workouts));
       return true;
-    } catch {
+    } catch (error) {
       return false;
     }
   }
@@ -161,7 +161,7 @@
     try {
       validateWorkoutValues(workout);
       return true;
-    } catch {
+    } catch (error) {
       return false;
     }
   }

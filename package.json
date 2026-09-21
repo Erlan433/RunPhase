@@ -1,0 +1,23 @@
+{
+  "name": "runira",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Runira interval running timer",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/Erlan433/RunPhase.git"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "bugs": {
+    "url": "https://github.com/Erlan433/RunPhase/issues"
+  },
+  "homepage": "https://github.com/Erlan433/RunPhase#readme",
+  "dependencies": {
+    "@capacitor/core": "^8.5.2"
+  },
+  "devDependencies": {
+    "@capacitor/cli": "^8.5.2"
+  }
+}

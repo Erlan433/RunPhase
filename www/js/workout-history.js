@@ -57,14 +57,14 @@
         storedHistory = parsedHistory;
       }
 
-      if (storedHistory.some((item) => item?.id === normalizedRecord.id)) {
+      if (storedHistory.some((item) => item && item.id === normalizedRecord.id)) {
         return true;
       }
 
       storedHistory.unshift(toStoredRecord(normalizedRecord));
       localStorage.setItem(WORKOUT_HISTORY_STORAGE_KEY, JSON.stringify(storedHistory));
       return true;
-    } catch {
+    } catch (error) {
       return false;
     }
   }
@@ -86,7 +86,7 @@
       return parsedHistory
         .map(normalizeWorkoutRecord)
         .filter(Boolean);
-    } catch {
+    } catch (error) {
       return [];
     }
   }
@@ -132,7 +132,7 @@
       typeof value === 'string' && Number.isFinite(Date.parse(value))
     ));
 
-    return timestamp ?? null;
+    return timestamp || null;
   }
 
   function getWorkoutName(record) {

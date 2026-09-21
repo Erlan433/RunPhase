@@ -33,7 +33,7 @@ class WorkoutSession {
 
     this._now = now;
     this._timeline = createTimeline(this.settings);
-    this._totalDurationMs = this._timeline.at(-1).endMs;
+    this._totalDurationMs = this._timeline[this._timeline.length - 1].endMs;
     this._status = SESSION_STATUS.IDLE;
     this._elapsedBeforeRunMs = 0;
     this._runStartedAtMs = null;
@@ -209,7 +209,7 @@ class WorkoutSession {
       totalCycles: this.settings.cycles,
       stageProgress: clamp(stageElapsedMs / segment.durationMs, 0, 1),
       totalProgress: clamp(elapsedMs / this._totalDurationMs, 0, 1),
-      nextStage: nextSegment?.stage ?? WORKOUT_STAGE.FINISHED,
+      nextStage: nextSegment ? nextSegment.stage : WORKOUT_STAGE.FINISHED,
       nextStageDurationSeconds: nextSegment ? nextSegment.durationMs / 1000 : 0,
     });
   }

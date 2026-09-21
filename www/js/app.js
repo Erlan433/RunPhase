@@ -2,12 +2,24 @@
 
 const STORAGE_KEY = 'runphase-settings';
 const RESULT_STORAGE_KEY = 'runphase-last-workout';
-const COUNTDOWN_DURATION_MS = 3_000;
+const USER_DATA_RESET_KEY = 'runira-user-data-reset-v1';
+const USER_DATA_STORAGE_KEYS = Object.freeze([
+  STORAGE_KEY,
+  RESULT_STORAGE_KEY,
+  'runphase-saved-workouts',
+  'runphase-workout-history',
+]);
+const COUNTDOWN_DURATION_MS = 3000;
 const START_MESSAGE_DURATION_MS = 700;
-const spokenCountdownNumbers = Object.freeze({
-  3: 'три',
-  2: 'два',
-  1: 'один',
+const workoutAudioSources = Object.freeze({
+  countdown3: './assets/sounds/countdown-3.mp3',
+  countdown2: './assets/sounds/countdown-2.mp3',
+  countdown1: './assets/sounds/countdown-1.mp3',
+  workoutStarted: './assets/sounds/workout-started.mp3',
+  warmup: './assets/sounds/warmup.mp3',
+  run: './assets/sounds/run.mp3',
+  walk: './assets/sounds/walk.mp3',
+  workoutFinished: './assets/sounds/workout-finished.mp3',
 });
 
 const settingsConfig = {
@@ -32,6 +44,8 @@ const settingsConfig = {
     format: String,
   },
 };
+
+clearStoredUserDataOnce();
 
 const storedConfiguration = loadStoredConfiguration();
 const settings = loadSettings(storedConfiguration);
@@ -102,8 +116,10 @@ let workoutAnimationFrameId = null;
 let lastWorkoutRenderKey = '';
 let lastVibrationStage = null;
 let lastCountdownVibrationKey = '';
-let lastSpeechStage = null;
-let lastSpokenCountdownKey = '';
+let lastAudioStage = null;
+let lastAudioCountdownKey = '';
+let activeWorkoutAudio = null;
+let audioSequenceId = 0;
 let hasAnnouncedWorkoutCompletion = false;
 let currentScreen = 'home';
 const initialCalendarDate = new Date();
@@ -137,11 +153,10 @@ const stageContent = {
   FINISHED: { label: 'ГОТОВО', nextLabel: 'Финиш' },
 };
 
-const stageSpeechContent = Object.freeze({
-  PREPARE: 'Приготовьтесь',
-  WARMUP: 'Разминка',
-  RUN: 'Бег',
-  WALK: 'Ходьба',
+const stageAudioKeys = Object.freeze({
+  WARMUP: 'warmup',
+  RUN: 'run',
+  WALK: 'walk',
 });
 
 renderSettings();
@@ -376,16 +391,16 @@ function showCountdownValue(value) {
 }
 
 function beginWorkout() {
-  const workoutConfiguration = activeWorkoutConfiguration ?? getWorkoutConfiguration(settings);
+  const workoutConfiguration = activeWorkoutConfiguration || getWorkoutConfiguration(settings);
 
   buildWorkoutRoute(workoutConfiguration);
   lastWorkoutRenderKey = '';
   lastVibrationStage = null;
   lastCountdownVibrationKey = '';
-  lastSpeechStage = null;
-  lastSpokenCountdownKey = '';
+  lastAudioStage = null;
+  lastAudioCountdownKey = '';
   hasAnnouncedWorkoutCompletion = false;
-  cancelWorkoutSpeech();
+  cancelWorkoutAudio();
 
   if (!workoutSession) {
     return;
@@ -429,7 +444,7 @@ function pauseWorkout() {
 
   const pausedState = workoutSession.pause();
 
-  cancelWorkoutSpeech();
+  cancelWorkoutAudio();
   renderWorkout(pausedState);
 
   if (pausedState.status !== 'paused') {
@@ -469,7 +484,7 @@ function finishWorkout() {
   }
 
   workoutSession.stop();
-  cancelWorkoutSpeech();
+  cancelWorkoutAudio();
 
   if (workoutAnimationFrameId !== null) {
     cancelAnimationFrame(workoutAnimationFrameId);
@@ -488,7 +503,7 @@ function showWorkoutResult() {
   const summary = workoutSession.getSummary();
 
   if (summary.status !== 'finished') {
-    cancelWorkoutSpeech();
+    cancelWorkoutAudio();
   }
 
   const workoutRecord = createWorkoutRecord(summary);
@@ -505,7 +520,7 @@ function showWorkoutResult() {
 
   if (summary.status === 'finished' && !hasAnnouncedWorkoutCompletion) {
     hasAnnouncedWorkoutCompletion = true;
-    speakText('Тренировка завершена. Ты сделал это!');
+    playWorkoutAudio('workoutFinished');
   }
 
   workoutSession = null;
@@ -521,13 +536,13 @@ function storeLastWorkoutResult(workoutRecord) {
         settings: { ...settings },
       }),
     );
-  } catch {
+  } catch (error) {
     // The result screen remains usable when local storage is unavailable.
   }
 }
 
 function repeatWorkout() {
-  startWorkout(activeWorkoutConfiguration ?? settings, activeWorkoutName);
+  startWorkout(activeWorkoutConfiguration || settings, activeWorkoutName);
 }
 
 function returnHome() {
@@ -564,6 +579,15 @@ function showScreen(screenName) {
     throw new Error(`Unknown screen: ${screenName}`);
   }
 
+  const activeElement = document.activeElement;
+  const activeScreen = activeElement instanceof HTMLElement
+    ? activeElement.closest('[data-screen]')
+    : null;
+
+  if (activeScreen && activeScreen.dataset.screen !== screenName) {
+    activeElement.blur();
+  }
+
   screenElements.forEach((screen) => {
     const isActive = screen.dataset.screen === screenName;
 
@@ -575,13 +599,14 @@ function showScreen(screenName) {
   document.body.dataset.screen = screenName;
   updateBottomNavigation(screenName);
   window.scrollTo(0, 0);
+  requestAnimationFrame(() => window.scrollTo(0, 0));
 }
 
 function updateBottomNavigation(screenName) {
-  const isHidden = !workoutEditorElement.hidden
-    || !deleteConfirmationElement.hidden
-    || ['countdown', 'workout', 'result'].includes(screenName);
+  const hasOpenDialog = !workoutEditorElement.hidden || !deleteConfirmationElement.hidden;
+  const isHidden = hasOpenDialog || ['countdown', 'workout', 'result'].includes(screenName);
 
+  document.body.classList.toggle('is-modal-open', hasOpenDialog);
   bottomNavigationElement.hidden = isHidden;
   bottomNavigationItems.forEach((item) => {
     const isCurrent = item.dataset.navTarget === screenName;
@@ -650,7 +675,8 @@ function renderHistoryCalendar() {
     fragment.append(dayButton);
   }
 
-  calendarGridElement.replaceChildren(fragment);
+  calendarGridElement.textContent = '';
+  calendarGridElement.append(fragment);
   renderSelectedHistoryDay();
 }
 
@@ -666,7 +692,8 @@ function renderSelectedHistoryDay() {
     fragment.append(createHistoryDayCard(workout));
   });
 
-  historyDayListElement.replaceChildren(fragment);
+  historyDayListElement.textContent = '';
+  historyDayListElement.append(fragment);
   historyDayListElement.hidden = workouts.length === 0;
   historyDayEmptyElement.hidden = workouts.length > 0;
 }
@@ -781,7 +808,7 @@ function formatCalendarDateLabel(date) {
 }
 
 function openWorkoutEditor(workout = null) {
-  const isEditing = Boolean(workout?.id);
+  const isEditing = Boolean(workout && workout.id);
 
   editingWorkoutId = isEditing ? workout.id : null;
   workoutDraftConfiguration = getWorkoutConfiguration(isEditing ? workout : settings);
@@ -883,7 +910,8 @@ function renderSavedWorkouts() {
     fragment.append(createSavedWorkoutCard(workout));
   });
 
-  workoutsListElement.replaceChildren(fragment);
+  workoutsListElement.textContent = '';
+  workoutsListElement.append(fragment);
   workoutsListElement.hidden = savedWorkouts.length === 0;
   workoutsEmptyElement.hidden = savedWorkouts.length > 0;
   workoutsCreateMoreElement.hidden = savedWorkouts.length === 0;
@@ -994,7 +1022,7 @@ function getWorkoutConfiguration(source) {
 function renderWorkout(state) {
   workoutScreenElement.style.setProperty('--route-progress', `${state.totalProgress * 100}%`);
   provideWorkoutVibration(state);
-  provideWorkoutSpeech(state);
+  provideWorkoutAudio(state);
 
   const renderKey = [
     state.status,
@@ -1052,7 +1080,7 @@ function vibrate(pattern) {
 
   try {
     navigator.vibrate(pattern);
-  } catch {
+  } catch (error) {
     // Vibration is optional and must not affect the workout when unavailable.
   }
 }
@@ -1063,7 +1091,7 @@ function toggleSound() {
   saveSettings();
 
   if (!soundEnabled) {
-    cancelWorkoutSpeech();
+    cancelWorkoutAudio();
   }
 }
 
@@ -1097,110 +1125,136 @@ function renderThemePreference() {
   });
 }
 
-function provideWorkoutSpeech(state) {
+function provideWorkoutAudio(state) {
   if (!soundEnabled) {
     return;
   }
 
   if (state.status !== 'running') {
     if (state.status !== 'finished') {
-      cancelWorkoutSpeech();
+      cancelWorkoutAudio();
     }
 
     return;
   }
 
-  if (state.stage !== lastSpeechStage) {
-    const isFirstStage = lastSpeechStage === null;
+  if (state.stage !== lastAudioStage) {
+    const isFirstStage = lastAudioStage === null;
 
-    lastSpeechStage = state.stage;
-    lastSpokenCountdownKey = '';
-    speakWorkoutStage(state.stage, isFirstStage);
+    lastAudioStage = state.stage;
+    lastAudioCountdownKey = '';
+
+    if (isFirstStage) {
+      playWorkoutAudio(['workoutStarted', stageAudioKeys[state.stage]]);
+    } else if (stageAudioKeys[state.stage]) {
+      playWorkoutAudio(stageAudioKeys[state.stage]);
+    }
   }
 
-  const spokenNumber = spokenCountdownNumbers[state.remainingSeconds];
+  const countdownAudioKey = {
+    3: 'countdown3',
+    2: 'countdown2',
+    1: 'countdown1',
+  }[state.remainingSeconds];
 
-  if (!spokenNumber) {
+  if (!countdownAudioKey) {
     return;
   }
 
-  const speechKey = `${state.stage}:${state.currentCycle}:${state.remainingSeconds}`;
+  const audioKey = `${state.stage}:${state.currentCycle}:${state.remainingSeconds}`;
 
-  if (speechKey === lastSpokenCountdownKey) {
+  if (audioKey === lastAudioCountdownKey) {
     return;
   }
 
-  lastSpokenCountdownKey = speechKey;
-  speakText(spokenNumber);
+  lastAudioCountdownKey = audioKey;
+  playWorkoutAudio(countdownAudioKey);
 }
 
-function speakWorkoutStage(stage, isFirstStage) {
-  const speech = stageSpeechContent[stage];
-
-  if (speech) {
-    speakText(isFirstStage ? `Тренировка началась. ${speech}` : speech);
-  }
-}
-
-function speakText(text) {
+function playWorkoutAudio(audioKeys) {
   if (!soundEnabled) {
     return;
   }
 
-  const synthesis = globalThis.speechSynthesis;
-  const SpeechUtterance = globalThis.SpeechSynthesisUtterance;
-
-  if (!synthesis
-    || typeof synthesis.speak !== 'function'
-    || typeof SpeechUtterance !== 'function') {
+  if (typeof globalThis.Audio !== 'function') {
     return;
   }
 
-  try {
-    const utterance = new SpeechUtterance(text);
-    const voice = getPreferredSpeechVoice(synthesis);
+  const sequence = Array.isArray(audioKeys) ? audioKeys : [audioKeys];
+  const currentSequenceId = ++audioSequenceId;
 
-    utterance.lang = 'ru-RU';
-    utterance.rate = 1.05;
+  stopActiveWorkoutAudio();
 
-    if (voice) {
-      utterance.voice = voice;
+  const playNext = (index) => {
+    if (
+      !soundEnabled
+      || currentSequenceId !== audioSequenceId
+      || index >= sequence.length
+    ) {
+      return;
     }
 
-    synthesis.speak(utterance);
-  } catch {
-    // Speech cues are optional and must not interrupt the workout.
-  }
+    const source = workoutAudioSources[sequence[index]];
+
+    if (!source) {
+      playNext(index + 1);
+      return;
+    }
+
+    let settled = false;
+    const audio = new globalThis.Audio(source);
+    activeWorkoutAudio = audio;
+    audio.preload = 'auto';
+
+    const finishAudio = () => {
+      if (settled) {
+        return;
+      }
+
+      settled = true;
+
+      if (activeWorkoutAudio === audio) {
+        activeWorkoutAudio = null;
+      }
+
+      playNext(index + 1);
+    };
+
+    audio.addEventListener('ended', finishAudio, { once: true });
+    audio.addEventListener('error', finishAudio, { once: true });
+
+    try {
+      const playResult = audio.play();
+
+      if (playResult && typeof playResult.catch === 'function') {
+        playResult.catch(finishAudio);
+      }
+    } catch (error) {
+      finishAudio();
+    }
+  };
+
+  playNext(0);
 }
 
-function getPreferredSpeechVoice(synthesis) {
-  try {
-    const voices = typeof synthesis.getVoices === 'function'
-      ? synthesis.getVoices()
-      : [];
-
-    return voices.find((voice) => voice.lang?.toLowerCase() === 'ru-ru')
-      ?? voices.find((voice) => voice.lang?.toLowerCase().startsWith('ru'))
-      ?? voices.find((voice) => voice.default)
-      ?? voices[0]
-      ?? null;
-  } catch {
-    return null;
-  }
-}
-
-function cancelWorkoutSpeech() {
-  const synthesis = globalThis.speechSynthesis;
-
-  if (!synthesis || typeof synthesis.cancel !== 'function') {
+function stopActiveWorkoutAudio() {
+  if (!activeWorkoutAudio) {
     return;
   }
 
   try {
-    synthesis.cancel();
-  } catch {
-    // Speech cues are optional and must not interrupt the workout.
+    activeWorkoutAudio.pause();
+    activeWorkoutAudio.currentTime = 0;
+  } catch (error) {
+    // Audio cues are optional and must not interrupt the workout.
   }
+
+  activeWorkoutAudio = null;
+}
+
+function cancelWorkoutAudio() {
+  audioSequenceId += 1;
+  stopActiveWorkoutAudio();
 }
 
 function buildWorkoutRoute(workoutConfiguration) {
@@ -1226,8 +1280,10 @@ function buildWorkoutRoute(workoutConfiguration) {
     routeFragment.append(segment);
   });
 
-  routeFutureElement.replaceChildren(routeFragment);
-  routeCompletedElement.replaceChildren(...Array.from(routeFutureElement.children, (segment) => segment.cloneNode()));
+  routeFutureElement.textContent = '';
+  routeFutureElement.append(routeFragment);
+  routeCompletedElement.textContent = '';
+  routeCompletedElement.append(...Array.from(routeFutureElement.children, (segment) => segment.cloneNode()));
   workoutRouteElement.classList.toggle('is-compact', segments.length > 20);
   workoutRouteElement.setAttribute(
     'aria-label',
@@ -1280,7 +1336,7 @@ function renderSetting(row, key, workoutConfiguration = settings) {
   const config = settingsConfig[key];
   const value = workoutConfiguration[key];
   const firstValue = config.allowedValues[0];
-  const lastValue = config.allowedValues.at(-1);
+  const lastValue = config.allowedValues[config.allowedValues.length - 1];
 
   row.querySelector('[data-value]').textContent = config.format(value);
   row.querySelector('[data-direction="decrease"]').disabled = value <= firstValue;
@@ -1328,7 +1384,7 @@ function createDurationValues(minSeconds, maxSeconds) {
     }
   }
 
-  if (values.at(-1) !== maxSeconds) {
+  if (values[values.length - 1] !== maxSeconds) {
     values.push(maxSeconds);
   }
 
@@ -1375,15 +1431,30 @@ function loadStoredConfiguration() {
     return parsedValue && typeof parsedValue === 'object' && !Array.isArray(parsedValue)
       ? parsedValue
       : null;
-  } catch {
+  } catch (error) {
     return null;
   }
 }
 
+function clearStoredUserDataOnce() {
+  try {
+    if (localStorage.getItem(USER_DATA_RESET_KEY) === 'complete') {
+      return;
+    }
+
+    USER_DATA_STORAGE_KEYS.forEach((key) => localStorage.removeItem(key));
+    localStorage.setItem(USER_DATA_RESET_KEY, 'complete');
+  } catch (error) {
+    // The application remains usable when local storage is unavailable.
+  }
+}
+
 function loadSettings(savedSettings) {
-  const defaults = Object.fromEntries(
-    Object.entries(settingsConfig).map(([key, config]) => [key, config.defaultValue]),
-  );
+  const defaults = {};
+
+  Object.entries(settingsConfig).forEach(([key, config]) => {
+    defaults[key] = config.defaultValue;
+  });
 
   if (!savedSettings) {
     return defaults;
@@ -1399,20 +1470,20 @@ function loadSettings(savedSettings) {
 }
 
 function loadSoundEnabled(savedSettings) {
-  const savedValue = savedSettings?.sound;
+  const savedValue = savedSettings ? savedSettings.sound : undefined;
 
   if (typeof savedValue === 'boolean') {
     return savedValue;
   }
 
   // Preserve the value saved by earlier versions of the application.
-  return typeof savedSettings?.soundEnabled === 'boolean'
+  return typeof (savedSettings && savedSettings.soundEnabled) === 'boolean'
     ? savedSettings.soundEnabled
     : true;
 }
 
 function loadThemePreference(savedSettings) {
-  const savedTheme = savedSettings?.theme;
+  const savedTheme = savedSettings ? savedSettings.theme : undefined;
 
   return ['light', 'dark'].includes(savedTheme) ? savedTheme : 'dark';
 }
@@ -1430,7 +1501,7 @@ function saveSettings() {
         theme: themePreference,
       }),
     );
-  } catch {
+  } catch (error) {
     // Controls remain functional when storage is unavailable.
   }
 }
